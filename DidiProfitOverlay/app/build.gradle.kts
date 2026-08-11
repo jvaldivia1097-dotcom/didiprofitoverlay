@@ -11,8 +11,8 @@ android {
         applicationId = "com.jonathan.didiprofit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
 
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }
@@ -39,7 +39,6 @@ kotlin {
 }
 
 dependencies {
-    // Bundled OCR model: works immediately and keeps recognition on-device.
     implementation("com.google.mlkit:text-recognition:16.0.1")
     testImplementation(kotlin("test"))
 }

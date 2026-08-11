@@ -36,9 +36,16 @@ class CaptureService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val ocrBusy = AtomicBoolean(false)
+
     private var lastFrameAt = 0L
     private var lastOfferAt = 0L
     private var lastSignature = ""
+
+    // V2.1: retain the newest frame if OCR is busy or throttled.
+    private val pendingLock = Any()
+    private var pendingImage: Image? = null
+    private var pendingDrainScheduled = false
+
     private lateinit var overlay: OverlayController
     private lateinit var preferences: ProfitPreferences
 
@@ -102,16 +109,10 @@ class CaptureService : Service() {
         workerThread = HandlerThread("didi-ocr").also { it.start() }
         workerHandler = Handler(workerThread!!.looper)
 
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2).also { reader ->
+        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also { reader ->
             reader.setOnImageAvailableListener({ source ->
-                val now = System.currentTimeMillis()
                 val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-                if (now - lastFrameAt < FRAME_INTERVAL_MS || ocrBusy.get()) {
-                    image.close()
-                    return@setOnImageAvailableListener
-                }
-                lastFrameAt = now
-                processImage(image)
+                queueOrProcessImage(image)
             }, workerHandler)
         }
 
@@ -127,6 +128,75 @@ class CaptureService : Service() {
         )
     }
 
+    private fun queueOrProcessImage(image: Image) {
+        val now = System.currentTimeMillis()
+        val canProcessNow = !ocrBusy.get() && now - lastFrameAt >= FRAME_INTERVAL_MS
+
+        if (canProcessNow) {
+            val stale = synchronized(pendingLock) {
+                val old = pendingImage
+                pendingImage = null
+                old
+            }
+            stale?.close()
+
+            lastFrameAt = now
+            processImage(image)
+            return
+        }
+
+        synchronized(pendingLock) {
+            pendingImage?.close()
+            pendingImage = image
+        }
+        schedulePendingDrain()
+    }
+
+    private fun schedulePendingDrain() {
+        val handler = workerHandler ?: return
+        if (pendingDrainScheduled) return
+
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastFrameAt
+        val delay = if (ocrBusy.get()) {
+            OCR_BUSY_RETRY_MS
+        } else {
+            maxOf(OCR_BUSY_RETRY_MS, FRAME_INTERVAL_MS - elapsed)
+        }
+
+        pendingDrainScheduled = true
+        handler.postDelayed({
+            pendingDrainScheduled = false
+            drainPendingImage()
+        }, delay)
+    }
+
+    private fun drainPendingImage() {
+        val hasPending = synchronized(pendingLock) { pendingImage != null }
+        if (!hasPending) return
+
+        if (ocrBusy.get()) {
+            schedulePendingDrain()
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastFrameAt
+        if (elapsed < FRAME_INTERVAL_MS) {
+            schedulePendingDrain()
+            return
+        }
+
+        val image = synchronized(pendingLock) {
+            val latest = pendingImage
+            pendingImage = null
+            latest
+        } ?: return
+
+        lastFrameAt = now
+        processImage(image)
+    }
+
     private fun processImage(image: Image) {
         ocrBusy.set(true)
         val bitmap = try {
@@ -137,6 +207,7 @@ class CaptureService : Service() {
 
         if (bitmap == null) {
             ocrBusy.set(false)
+            workerHandler?.post { drainPendingImage() }
             return
         }
 
@@ -175,6 +246,7 @@ class CaptureService : Service() {
             .addOnCompleteListener {
                 bitmap.recycle()
                 ocrBusy.set(false)
+                workerHandler?.post { drainPendingImage() }
             }
     }
 
@@ -240,17 +312,30 @@ class CaptureService : Service() {
     }
 
     override fun onDestroy() {
+        imageReader?.setOnImageAvailableListener(null, null)
+
+        synchronized(pendingLock) {
+            pendingImage?.close()
+            pendingImage = null
+        }
+
+        workerHandler?.removeCallbacksAndMessages(null)
+
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
         imageReader = null
+
         runCatching { mediaProjection?.stop() }
         mediaProjection = null
+
         recognizer.close()
         overlay.remove()
+
         workerThread?.quitSafely()
         workerThread = null
         workerHandler = null
+
         super.onDestroy()
     }
 
@@ -262,7 +347,8 @@ class CaptureService : Service() {
         const val EXTRA_RESULT_DATA = "result_data"
         private const val CHANNEL_ID = "didi_profit_capture"
         private const val NOTIFICATION_ID = 1042
-        private const val FRAME_INTERVAL_MS = 800L
+        private const val FRAME_INTERVAL_MS = 450L
+        private const val OCR_BUSY_RETRY_MS = 80L
         private const val WAITING_RESET_MS = 3500L
     }
 }
