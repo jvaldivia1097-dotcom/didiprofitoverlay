@@ -1,0 +1,12 @@
+Parser smoke tests (executed with local Kotlin compiler)
+
+Sample 1: fare 34.32; pickup 9 min / 3.9 km; trip 11 min / 3.7 km
+Result: 20 min; 7.600 km; 102.96 MXN/h; 4.52 MXN/km
+
+Sample 2: fare 39.95; pickup 3 min / 277 m; trip 13 min / 4.6 km
+Result: 16 min; 4.877 km; 149.81 MXN/h; 8.19 MXN/km
+
+Sample 3: fare 67.44; pickup 10 min / 2.5 km; trip 11 min / 4.6 km
+Result: 21 min; 7.100 km; 192.69 MXN/h; 9.50 MXN/km
+
+Geometry smoke test: overlay lines ($/h and $/km) were included in simulated OCR and correctly ignored; main DiDi fare remained 34.32.

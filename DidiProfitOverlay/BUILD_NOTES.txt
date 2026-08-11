@@ -1,0 +1,2 @@
+This execution environment did not include the Android SDK or Gradle executable, so an APK could not be compiled here.
+The complete Android Studio source project is included. The parser logic was separately syntax-checked/tested with the local Kotlin compiler.
