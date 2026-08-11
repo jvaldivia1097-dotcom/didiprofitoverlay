@@ -1,12 +1,13 @@
-Parser smoke tests (executed with local Kotlin compiler)
+V2 logic checks
+===============
+Caso real: tarifa 52.97, recogida 5 min / 648 m, viaje 17 min / 6.8 km
+Total: 22 min / 7.448 km
+$/hora: 144.46
+$/km: 7.11
+Objetivo 150/h -> tarifa mínima 55.00
+Objetivo 180/h -> tarifa mínima 66.00
+Objetivo 210/h -> tarifa mínima 77.00
 
-Sample 1: fare 34.32; pickup 9 min / 3.9 km; trip 11 min / 3.7 km
-Result: 20 min; 7.600 km; 102.96 MXN/h; 4.52 MXN/km
-
-Sample 2: fare 39.95; pickup 3 min / 277 m; trip 13 min / 4.6 km
-Result: 16 min; 4.877 km; 149.81 MXN/h; 8.19 MXN/km
-
-Sample 3: fare 67.44; pickup 10 min / 2.5 km; trip 11 min / 4.6 km
-Result: 21 min; 7.100 km; 192.69 MXN/h; 9.50 MXN/km
-
-Geometry smoke test: overlay lines ($/h and $/km) were included in simulated OCR and correctly ignored; main DiDi fare remained 34.32.
+Mensajes inactivos probados:
+- "Otro conductor aceptó el viaje" -> detectado
+- "No hay más solicitudes" -> detectado

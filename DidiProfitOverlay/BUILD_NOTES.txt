@@ -1,2 +1,9 @@
-This execution environment did not include the Android SDK or Gradle executable, so an APK could not be compiled here.
-The complete Android Studio source project is included. The parser logic was separately syntax-checked/tested with the local Kotlin compiler.
+DiDi Rentabilidad Overlay — V2
+
+Cambios principales:
+- Tres objetivos configurables para Pon Tu Precio (por defecto 150/180/210 $/h).
+- Calcula tarifa mínima necesaria usando tiempo total de recogida + viaje.
+- Muestra cuánto falta subir vs la tarifa actual, o "✓ actual" si ya cumple.
+- Reinicia el overlay al detectar "Otro conductor aceptó el viaje" o "No hay más solicitudes".
+- Version 0.2.0 / versionCode 2.
+- AndroidX habilitado para ML Kit.

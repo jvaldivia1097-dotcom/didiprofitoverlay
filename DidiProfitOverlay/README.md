@@ -1,4 +1,4 @@
-# DiDi Rentabilidad Overlay — V1
+# DiDi Rentabilidad Overlay — V2
 
 Aplicación Android personal que analiza ofertas visibles de DiDi Conductor y muestra un panel flotante con:
 
@@ -36,7 +36,7 @@ Los cuatro valores se pueden editar desde la pantalla principal.
 
 ## Privacidad
 
-La V1 no envía capturas ni datos a un servidor. El OCR usa el modelo bundled de ML Kit y se procesa en el teléfono.
+La V2 no envía capturas ni datos a un servidor. El OCR usa el modelo bundled de ML Kit y se procesa en el teléfono.
 
 ## Importar en Android Studio
 
@@ -47,7 +47,7 @@ La V1 no envía capturas ni datos a un servidor. El OCR usa el modelo bundled de
 
 La sesión de MediaProjection debe ser autorizada por el usuario cada vez que se inicia el análisis en Android moderno.
 
-## Alcance V1
+## Alcance V2
 
 La app **no toca ni modifica DiDi Conductor**, y **no acepta/rechaza viajes automáticamente**. Solo analiza lo que está visible en pantalla.
 
@@ -64,3 +64,11 @@ Tras probarla con capturas reales del teléfono Android donde se usará DiDi, aj
 ## Compilación automática opcional con GitHub Actions
 
 El proyecto incluye `.github/workflows/build-apk.yml`. Si se sube a un repositorio de GitHub, la acción **Build Android APK** compila `app-debug.apk` y lo deja como artefacto descargable del workflow.
+
+
+## Novedades V2
+
+- Tres objetivos configurables de ingreso por hora para **Pon Tu Precio** (150, 180 y 210 $/h por defecto).
+- El overlay calcula la **tarifa mínima** para cada objetivo usando el tiempo total de recogida + viaje.
+- Si hace falta subir la oferta muestra la diferencia (ej. `+$13.03`); si la oferta actual ya cumple muestra `✓ actual`.
+- El panel se limpia inmediatamente cuando OCR detecta mensajes como **“Otro conductor aceptó el viaje”** o **“No hay más solicitudes”**.

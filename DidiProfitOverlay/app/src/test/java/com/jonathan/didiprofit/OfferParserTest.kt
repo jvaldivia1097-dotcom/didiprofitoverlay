@@ -2,6 +2,7 @@ package com.jonathan.didiprofit
 
 import kotlin.math.abs
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -54,5 +55,20 @@ class OfferParserTest {
         assertTrue(offer.totalMinutes == 21)
         assertTrue(abs(offer.totalKilometers - 7.1) < 0.001)
         assertTrue(abs(offer.pesosPerHour - 192.6857) < 0.01)
+    }
+
+    @Test
+    fun calculatesPonTuPrecioTargets() {
+        val offer = RideOffer(52.97, RouteMetric(5, 0.648), RouteMetric(17, 6.8))
+        assertTrue(abs(offer.minimumFareForHourly(150.0) - 55.0) < 0.001)
+        assertTrue(abs(offer.minimumFareForHourly(180.0) - 66.0) < 0.001)
+        assertTrue(abs(offer.minimumFareForHourly(210.0) - 77.0) < 0.001)
+    }
+
+    @Test
+    fun detectsInactiveOfferMessages() {
+        assertTrue(OfferParser.isOfferInactive(listOf(OcrLine("Otro conductor aceptó el viaje"))))
+        assertTrue(OfferParser.isOfferInactive(listOf(OcrLine("No hay más solicitudes"))))
+        assertFalse(OfferParser.isOfferInactive(listOf(OcrLine("Pon Tu Precio Nuevo"))))
     }
 }

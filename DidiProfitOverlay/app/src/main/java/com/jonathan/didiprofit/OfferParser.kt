@@ -3,18 +3,31 @@ package com.jonathan.didiprofit
 import java.text.Normalizer
 import kotlin.math.max
 
-/**
- * Parser tuned for the current DiDi Conductor offer layout used in Mexico.
- * It deliberately ignores the overlay's own "$.../h" and "$.../km" lines.
- */
+/** Parser tuned for the current DiDi Conductor offer layout used in Mexico. */
 object OfferParser {
     private val fareRegex = Regex("\\$\\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)")
     private val routeRegex = Regex(
         "(?i)([0-9]{1,3})\\s*(?:min|minuto|minutos)\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(km|m)\\b"
     )
 
+    private val inactiveMarkers = listOf(
+        "otro conductor acepto el viaje",
+        "otro conductor tomo el viaje",
+        "no hay mas solicitudes",
+        "viaje ya no esta disponible",
+        "viaje no disponible",
+        "solicitud ya no esta disponible",
+        "este viaje ya fue aceptado"
+    )
+
+    fun isOfferInactive(lines: List<OcrLine>): Boolean {
+        if (lines.isEmpty()) return false
+        val folded = fold(lines.joinToString(" ") { it.text })
+        return inactiveMarkers.any { folded.contains(it) }
+    }
+
     fun parse(lines: List<OcrLine>): RideOffer? {
-        if (lines.isEmpty()) return null
+        if (lines.isEmpty() || isOfferInactive(lines)) return null
 
         val cleaned = lines.map { it.copy(text = normalize(it.text)) }
         val metrics = cleaned.mapNotNull { line ->
@@ -32,7 +45,6 @@ object OfferParser {
 
         if (fares.isEmpty()) return null
 
-        // Main card fare is normally one of the largest price text lines. Button/chip prices are smaller.
         val maxHeight = fares.maxOfOrNull { it.height } ?: 0
         val likelyMainFares = if (maxHeight > 0) {
             fares.filter { it.height >= max(1, (maxHeight * 0.72).toInt()) }
@@ -40,7 +52,6 @@ object OfferParser {
 
         val candidates = likelyMainFares.ifEmpty { fares }.sortedBy { it.y }
 
-        // Try geometry-aware grouping first: fare followed by the next two route metric rows.
         for ((index, fare) in candidates.withIndex()) {
             val nextFareY = candidates.getOrNull(index + 1)?.y ?: Int.MAX_VALUE
             val below = metrics.filter { (line, _) ->
@@ -51,12 +62,13 @@ object OfferParser {
             }
         }
 
-        // OCR engines sometimes return no useful bounding boxes. In that case use text order.
         return parseSimpleText(cleaned.joinToString("\n") { it.text })
     }
 
     fun parseSimpleText(raw: String): RideOffer? {
         val text = normalize(raw)
+        if (inactiveMarkers.any { fold(text).contains(it) }) return null
+
         val metricMatches = routeRegex.findAll(text).toList()
         if (metricMatches.size < 2) return null
 
@@ -92,10 +104,17 @@ object OfferParser {
             .replace(Regex("[ \\t]+"), " ")
     }
 
+    private fun fold(input: String): String {
+        return Normalizer.normalize(input.lowercase(), Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+            .replace(Regex("\\s+"), " ")
+    }
+
     private fun isOverlayLine(text: String): Boolean {
         val lower = text.lowercase()
         return lower.contains("/h") || lower.contains("/km") ||
-            lower.contains("rentabilidad") || lower.contains("analizando didi")
+            lower.contains("rentabilidad") || lower.contains("analizando didi") ||
+            lower.contains("pon tu precio · mínimo")
     }
 
     private fun contextLine(text: String, index: Int): String {

@@ -154,8 +154,15 @@ class CaptureService : Service() {
                     }
                 }.sortedBy { it.centerY }
 
-                val offer = OfferParser.parse(lines)
                 val now = System.currentTimeMillis()
+                if (OfferParser.isOfferInactive(lines)) {
+                    lastOfferAt = 0L
+                    lastSignature = ""
+                    mainHandler.post { overlay.showWaiting() }
+                    return@addOnSuccessListener
+                }
+
+                val offer = OfferParser.parse(lines)
                 if (offer != null && isPlausible(offer)) {
                     lastOfferAt = now
                     val signature = "${offer.fare}|${offer.totalMinutes}|${"%.3f".format(offer.totalKilometers)}"

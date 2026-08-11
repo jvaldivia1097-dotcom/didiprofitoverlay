@@ -18,6 +18,8 @@ class OverlayController(private val context: Context) {
     private var hourlyView: TextView? = null
     private var kmView: TextView? = null
     private var detailsView: TextView? = null
+    private var suggestionsTitleView: TextView? = null
+    private var suggestionsView: TextView? = null
     private var params: WindowManager.LayoutParams? = null
 
     fun showWaiting() {
@@ -27,6 +29,9 @@ class OverlayController(private val context: Context) {
         kmView?.text = "Esperando propuesta"
         kmView?.setTextColor(Color.LTGRAY)
         detailsView?.text = "Incluye recogida + viaje"
+        suggestionsTitleView?.visibility = View.GONE
+        suggestionsView?.visibility = View.GONE
+        suggestionsView?.text = ""
     }
 
     fun showOffer(offer: RideOffer, thresholds: Thresholds) {
@@ -44,6 +49,14 @@ class OverlayController(private val context: Context) {
             offer.totalKilometers,
             offer.fare
         )
+
+        suggestionsTitleView?.visibility = View.VISIBLE
+        suggestionsView?.visibility = View.VISIBLE
+        suggestionsView?.text = listOf(
+            suggestionLine(offer, thresholds.targetHourly1),
+            suggestionLine(offer, thresholds.targetHourly2),
+            suggestionLine(offer, thresholds.targetHourly3)
+        ).joinToString("\n")
     }
 
     fun remove() {
@@ -52,6 +65,8 @@ class OverlayController(private val context: Context) {
         hourlyView = null
         kmView = null
         detailsView = null
+        suggestionsTitleView = null
+        suggestionsView = null
         params = null
     }
 
@@ -85,10 +100,26 @@ class OverlayController(private val context: Context) {
             textSize = 12f
             setTextColor(Color.LTGRAY)
         }
+        suggestionsTitleView = TextView(context).apply {
+            text = "Pon Tu Precio · mínimo"
+            textSize = 12f
+            setTextColor(Color.LTGRAY)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(5), 0, 0)
+            visibility = View.GONE
+        }
+        suggestionsView = TextView(context).apply {
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            visibility = View.GONE
+        }
 
         container.addView(hourlyView)
         container.addView(kmView)
         container.addView(detailsView)
+        container.addView(suggestionsTitleView)
+        container.addView(suggestionsView)
 
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -109,6 +140,22 @@ class OverlayController(private val context: Context) {
         params = lp
     }
 
+    private fun suggestionLine(offer: RideOffer, targetHourly: Double): String {
+        val requiredFare = offer.minimumFareForHourly(targetHourly)
+        val delta = requiredFare - offer.fare
+        val targetText = if (targetHourly % 1.0 == 0.0) {
+            targetHourly.toInt().toString()
+        } else {
+            String.format(Locale.US, "%.1f", targetHourly)
+        }
+        val suffix = if (delta > 0.005) {
+            String.format(Locale.US, "  +$%.2f", delta)
+        } else {
+            "  ✓ actual"
+        }
+        return String.format(Locale.US, "%s/h → $%.2f%s", targetText, requiredFare, suffix)
+    }
+
     private fun makeDraggable(view: View, lp: WindowManager.LayoutParams) {
         var startX = 0
         var startY = 0
@@ -124,7 +171,6 @@ class OverlayController(private val context: Context) {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    // Gravity.END means positive x moves inward from the right edge.
                     lp.x = (startX - (event.rawX - touchX)).toInt().coerceAtLeast(0)
                     lp.y = (startY + (event.rawY - touchY)).toInt().coerceAtLeast(0)
                     runCatching { windowManager.updateViewLayout(view, lp) }
