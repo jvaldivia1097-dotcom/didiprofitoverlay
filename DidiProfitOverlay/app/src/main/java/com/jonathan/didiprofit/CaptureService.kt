@@ -41,7 +41,6 @@ class CaptureService : Service() {
     private var lastOfferAt = 0L
     private var lastSignature = ""
 
-    // V2.1: retain the newest frame if OCR is busy or throttled.
     private val pendingLock = Any()
     private var pendingImage: Image? = null
     private var pendingDrainScheduled = false
@@ -51,7 +50,10 @@ class CaptureService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        overlay = OverlayController(this)
+        overlay = OverlayController(this) {
+            // V2.3: dropping the overlay on the X shuts down the whole analysis service.
+            stopSelf()
+        }
         preferences = ProfitPreferences(this)
         createNotificationChannel()
     }
@@ -86,7 +88,8 @@ class CaptureService : Service() {
     private fun startProjection(resultCode: Int, data: Intent) {
         overlay.showWaiting()
 
-        val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val projectionManager =
+            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val projection = projectionManager.getMediaProjection(resultCode, data)
         mediaProjection = projection
 
@@ -109,7 +112,12 @@ class CaptureService : Service() {
         workerThread = HandlerThread("didi-ocr").also { it.start() }
         workerHandler = Handler(workerThread!!.looper)
 
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also { reader ->
+        imageReader = ImageReader.newInstance(
+            width,
+            height,
+            PixelFormat.RGBA_8888,
+            3
+        ).also { reader ->
             reader.setOnImageAvailableListener({ source ->
                 val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
                 queueOrProcessImage(image)
@@ -236,7 +244,8 @@ class CaptureService : Service() {
                 val offer = OfferParser.parse(lines)
                 if (offer != null && isPlausible(offer)) {
                     lastOfferAt = now
-                    val signature = "${offer.fare}|${offer.totalMinutes}|${"%.3f".format(offer.totalKilometers)}"
+                    val signature =
+                        "${offer.fare}|${offer.totalMinutes}|${"%.3f".format(offer.totalKilometers)}"
                     if (signature != lastSignature) lastSignature = signature
                     mainHandler.post { overlay.showOffer(offer, preferences.load()) }
                 } else if (now - lastOfferAt > WAITING_RESET_MS) {
@@ -266,7 +275,11 @@ class CaptureService : Service() {
         val rowPadding = rowStride - pixelStride * image.width
         val paddedWidth = image.width + rowPadding / pixelStride
 
-        val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+        val padded = Bitmap.createBitmap(
+            paddedWidth,
+            image.height,
+            Bitmap.Config.ARGB_8888
+        )
         padded.copyPixelsFromBuffer(buffer)
         val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
         if (padded !== cropped) padded.recycle()
@@ -292,7 +305,8 @@ class CaptureService : Service() {
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
-            @Suppress("DEPRECATION") Notification.Builder(this)
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
         }
             .setContentTitle("DiDi Rentabilidad activo")
             .setContentText("Analizando propuestas en pantalla")
@@ -335,6 +349,9 @@ class CaptureService : Service() {
         workerThread?.quitSafely()
         workerThread = null
         workerHandler = null
+
+        // Explicitly remove the foreground notification too.
+        stopForeground(STOP_FOREGROUND_REMOVE)
 
         super.onDestroy()
     }
