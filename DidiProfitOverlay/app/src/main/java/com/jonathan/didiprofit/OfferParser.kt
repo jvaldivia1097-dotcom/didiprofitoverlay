@@ -28,6 +28,27 @@ object OfferParser {
         "este viaje ya fue aceptado"
     )
 
+    /**
+     * Monetary rows that are NOT the offer's main fare.
+     *
+     * Example full-screen card:
+     *   $176.17                 <- main fare
+     *   $17.00 adicionales     <- secondary component
+     *   $10.15 de tarifa base dinámica <- secondary component
+     *
+     * Before V2.4, OCR could give those secondary rows a similar bounding-box height,
+     * causing geometry grouping to pair the route with one of them instead of $176.17.
+     */
+    private val secondaryFareMarkers = listOf(
+        "adicional",
+        "tarifa base dinamica",
+        "tarifa base",
+        "de tarifa mas rapido",
+        "tarifa mas rapido",
+        "aceptar $",
+        "tomar viaje"
+    )
+
     fun isOfferInactive(lines: List<OcrLine>): Boolean {
         if (lines.isEmpty()) return false
         val folded = fold(lines.joinToString(" ") { it.text })
@@ -45,15 +66,18 @@ object OfferParser {
         if (metrics.size < 2) return null
 
         val fares = cleaned.mapNotNull { line ->
-            if (isOverlayLine(line.text)) return@mapNotNull null
+            if (isOverlayLine(line.text) || isSecondaryFareLine(line.text)) {
+                return@mapNotNull null
+            }
             val match = fareRegex.find(line.text) ?: return@mapNotNull null
-            val value = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return@mapNotNull null
+            val value = match.groupValues[1].replace(',', '.').toDoubleOrNull()
+                ?: return@mapNotNull null
             FareCandidate(value, line.centerY, line.height, line.text)
         }
 
         if (fares.isEmpty()) return null
 
-        // The main fare is visually much larger than dynamic-base amounts and Pon Tu Precio chips.
+        // The main fare is usually visually larger than Pon Tu Precio chips.
         val maxHeight = fares.maxOfOrNull { it.height } ?: 0
         val likelyMainFares = if (maxHeight > 0) {
             fares.filter { it.height >= max(1, (maxHeight * 0.72).toInt()) }
@@ -67,6 +91,7 @@ object OfferParser {
             val below = metrics.filter { (line, _) ->
                 line.centerY >= fare.y && line.centerY < nextFareY
             }.take(2)
+
             if (below.size >= 2) {
                 return RideOffer(fare.value, below[0].second, below[1].second)
             }
@@ -84,8 +109,13 @@ object OfferParser {
         if (metricMatches.size < 2) return null
 
         val fare = fareRegex.findAll(text)
-            .firstOrNull { !isOverlayLine(contextLine(text, it.range.first)) }
-            ?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
+            .firstOrNull {
+                val line = contextLine(text, it.range.first)
+                !isOverlayLine(line) && !isSecondaryFareLine(line)
+            }
+            ?.groupValues?.get(1)
+            ?.replace(',', '.')
+            ?.toDoubleOrNull()
             ?: return null
 
         val pickup = metricFromMatch(metricMatches[0]) ?: return null
@@ -100,10 +130,17 @@ object OfferParser {
 
     private fun metricFromMatch(match: MatchResult): RouteMetric? {
         val minutes = match.groupValues[1].toIntOrNull() ?: return null
-        val distanceValue = match.groupValues[2].replace(',', '.').toDoubleOrNull() ?: return null
+        val distanceValue = match.groupValues[2]
+            .replace(',', '.')
+            .toDoubleOrNull()
+            ?: return null
+
         val kilometers = if (match.groupValues[3].equals("m", ignoreCase = true)) {
             distanceValue / 1000.0
-        } else distanceValue
+        } else {
+            distanceValue
+        }
+
         if (minutes <= 0 || kilometers < 0.0) return null
         return RouteMetric(minutes, kilometers)
     }
@@ -121,16 +158,25 @@ object OfferParser {
             .replace(Regex("\\s+"), " ")
     }
 
+    private fun isSecondaryFareLine(text: String): Boolean {
+        val folded = fold(text)
+        return secondaryFareMarkers.any { folded.contains(it) }
+    }
+
     private fun isOverlayLine(text: String): Boolean {
         val lower = text.lowercase()
-        return lower.contains("/h") || lower.contains("/km") ||
-            lower.contains("rentabilidad") || lower.contains("analizando didi") ||
+        return lower.contains("/h") ||
+            lower.contains("/km") ||
+            lower.contains("rentabilidad") ||
+            lower.contains("analizando didi") ||
             lower.contains("pon tu precio · mínimo")
     }
 
     private fun contextLine(text: String, index: Int): String {
-        val start = text.lastIndexOf('\n', maxOf(0, index - 1)).let { if (it < 0) 0 else it + 1 }
-        val end = text.indexOf('\n', index).let { if (it < 0) text.length else it }
+        val start = text.lastIndexOf('\n', maxOf(0, index - 1))
+            .let { if (it < 0) 0 else it + 1 }
+        val end = text.indexOf('\n', index)
+            .let { if (it < 0) text.length else it }
         return text.substring(start, end)
     }
 
