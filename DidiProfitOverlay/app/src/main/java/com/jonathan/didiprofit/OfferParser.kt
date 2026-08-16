@@ -3,11 +3,19 @@ package com.jonathan.didiprofit
 import java.text.Normalizer
 import kotlin.math.max
 
-/** Parser tuned for the current DiDi Conductor offer layout used in Mexico. */
+/** Parser tuned for the current DiDi Conductor offer layouts used in Mexico. */
 object OfferParser {
     private val fareRegex = Regex("\\$\\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)")
+
+    /**
+     * Supports both DiDi layouts seen in practice:
+     * - Carousel: "(5 min 648 m)" / "(17 min 6.8 km)"
+     * - Full-screen incoming offer: "6min (2.7km)" / "15min (6.9km)"
+     *
+     * OCR may insert/remove spaces, so all spacing and the parentheses around distance are optional.
+     */
     private val routeRegex = Regex(
-        "(?i)([0-9]{1,3})\\s*(?:min|minuto|minutos)\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(km|m)\\b"
+        "(?i)([0-9]{1,3})\\s*(?:min|minuto|minutos)\\s*(?:\\(\\s*)?([0-9]+(?:[.,][0-9]+)?)\\s*(km|m)\\s*\\)?"
     )
 
     private val inactiveMarkers = listOf(
@@ -45,6 +53,7 @@ object OfferParser {
 
         if (fares.isEmpty()) return null
 
+        // The main fare is visually much larger than dynamic-base amounts and Pon Tu Precio chips.
         val maxHeight = fares.maxOfOrNull { it.height } ?: 0
         val likelyMainFares = if (maxHeight > 0) {
             fares.filter { it.height >= max(1, (maxHeight * 0.72).toInt()) }
@@ -52,6 +61,7 @@ object OfferParser {
 
         val candidates = likelyMainFares.ifEmpty { fares }.sortedBy { it.y }
 
+        // Geometry-aware grouping: use the first two route rows below the main fare.
         for ((index, fare) in candidates.withIndex()) {
             val nextFareY = candidates.getOrNull(index + 1)?.y ?: Int.MAX_VALUE
             val below = metrics.filter { (line, _) ->
@@ -62,6 +72,7 @@ object OfferParser {
             }
         }
 
+        // Fallback for OCR results without useful bounding boxes.
         return parseSimpleText(cleaned.joinToString("\n") { it.text })
     }
 
