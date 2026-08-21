@@ -49,12 +49,18 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_CAPTURE && resultCode == RESULT_OK && data != null) {
             saveSettings(showToast = false)
+
+            // V2.5: never start with an orphan overlay from an older session.
+            OverlayController.removeAnyOverlay(this)
+
             val service = Intent(this, CaptureService::class.java).apply {
                 putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
                 putExtra(CaptureService.EXTRA_RESULT_DATA, data)
             }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(service)
             else startService(service)
+
             Toast.makeText(this, "Análisis iniciado. Abre DiDi Conductor.", Toast.LENGTH_LONG).show()
         }
     }
@@ -74,8 +80,9 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(25, 25, 25))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
+
         content.addView(TextView(this).apply {
-            text = "V2 · Rentabilidad en tiempo real + sugerencias de tarifa para Pon Tu Precio."
+            text = "V3 · Rentabilidad + historial + estadísticas + Pon Tu Precio."
             textSize = 15f
             setTextColor(Color.DKGRAY)
             setPadding(0, dp(6), 0, dp(18))
@@ -89,6 +96,7 @@ class MainActivity : Activity() {
         content.addView(status, matchWidth())
 
         content.addView(spacer(dp(16)))
+
         content.addView(Button(this).apply {
             text = "1. Permitir superposición"
             setOnClickListener { openOverlayPermission() }
@@ -102,8 +110,19 @@ class MainActivity : Activity() {
         content.addView(Button(this).apply {
             text = "Detener análisis"
             setOnClickListener {
+                // Also removes an orphan overlay even if the Service is already gone.
+                OverlayController.removeAnyOverlay(this@MainActivity)
+
                 stopService(Intent(this@MainActivity, CaptureService::class.java))
+
                 Toast.makeText(this@MainActivity, "Análisis detenido", Toast.LENGTH_SHORT).show()
+            }
+        }, matchWidth())
+
+        content.addView(Button(this).apply {
+            text = "Historial y estadísticas"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, HistoryActivity::class.java))
             }
         }, matchWidth())
 
@@ -119,6 +138,7 @@ class MainActivity : Activity() {
         hourlyGood = numberField("$/hora bueno", t.hourlyGood)
         kmExcellent = numberField("$/km excelente", t.kmExcellent)
         kmGood = numberField("$/km bueno", t.kmGood)
+
         content.addView(hourlyExcellent, matchWidth())
         content.addView(hourlyGood, matchWidth())
         content.addView(kmExcellent, matchWidth())
@@ -133,17 +153,18 @@ class MainActivity : Activity() {
         targetHourly1 = numberField("Objetivo 1 ($/hora)", t.targetHourly1)
         targetHourly2 = numberField("Objetivo 2 ($/hora)", t.targetHourly2)
         targetHourly3 = numberField("Objetivo 3 ($/hora)", t.targetHourly3)
+
         content.addView(targetHourly1, matchWidth())
         content.addView(targetHourly2, matchWidth())
         content.addView(targetHourly3, matchWidth())
 
         content.addView(Button(this).apply {
             text = "Guardar configuración"
-            setOnClickListener { saveSettings(showToast = true) }
+            setOnClickListener { saveSettings(true) }
         }, matchWidth())
 
         content.addView(TextView(this).apply {
-            text = "Cómo usarla\n\n1. Da permiso de superposición.\n2. Pulsa Iniciar análisis y acepta el aviso de captura de Android.\n3. Abre DiDi Conductor.\n4. Cuando aparezca una oferta, verás $/hora, $/km y tres tarifas objetivo.\n\nSi la tarifa actual ya alcanza un objetivo, el panel mostrará ✓ actual. Si necesita subir, mostrará cuánto falta, por ejemplo +$13.03.\n\nCuando DiDi indique que otro conductor aceptó el viaje o que no hay más solicitudes, el panel vuelve a Esperando propuesta."
+            text = "Cómo usarla\n\n1. Da permiso de superposición.\n2. Pulsa Iniciar análisis y acepta la captura.\n3. Abre DiDi Conductor.\n4. El panel muestra $/h, $/km, puntaje y Pon Tu Precio.\n5. Para detener rápidamente, arrastra el panel hacia la X inferior derecha.\n6. Historial y estadísticas guarda propuestas únicas y fusiona duplicados recientes."
             textSize = 14f
             setTextColor(Color.DKGRAY)
             setPadding(0, dp(22), 0, 0)
@@ -179,7 +200,12 @@ class MainActivity : Activity() {
             Toast.makeText(this, "El permiso ya está concedido", Toast.LENGTH_SHORT).show()
             return
         }
-        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        startActivity(
+            Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+        )
     }
 
     @Suppress("DEPRECATION")
@@ -189,6 +215,10 @@ class MainActivity : Activity() {
             openOverlayPermission()
             return
         }
+
+        // V2.5 safety net.
+        OverlayController.removeAnyOverlay(this)
+
         val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         startActivityForResult(manager.createScreenCaptureIntent(), REQUEST_CAPTURE)
     }
@@ -199,16 +229,17 @@ class MainActivity : Activity() {
             return if (value > 0.0) value else fallback
         }
 
-        val t = Thresholds(
-            hourlyExcellent = positive(hourlyExcellent, 300.0),
-            hourlyGood = positive(hourlyGood, 220.0),
-            kmExcellent = positive(kmExcellent, 8.0),
-            kmGood = positive(kmGood, 6.0),
-            targetHourly1 = positive(targetHourly1, 150.0),
-            targetHourly2 = positive(targetHourly2, 180.0),
-            targetHourly3 = positive(targetHourly3, 210.0)
+        preferences.save(
+            Thresholds(
+                hourlyExcellent = positive(hourlyExcellent, 300.0),
+                hourlyGood = positive(hourlyGood, 220.0),
+                kmExcellent = positive(kmExcellent, 8.0),
+                kmGood = positive(kmGood, 6.0),
+                targetHourly1 = positive(targetHourly1, 150.0),
+                targetHourly2 = positive(targetHourly2, 180.0),
+                targetHourly3 = positive(targetHourly3, 210.0)
+            )
         )
-        preferences.save(t)
         if (showToast) Toast.makeText(this, "Configuración guardada", Toast.LENGTH_SHORT).show()
     }
 

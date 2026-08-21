@@ -20,18 +20,14 @@ class OverlayController(
     private val onStopRequested: () -> Unit = {}
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-
     private var root: LinearLayout? = null
     private var hourlyView: TextView? = null
     private var kmView: TextView? = null
     private var detailsView: TextView? = null
+    private var scoreView: TextView? = null
     private var suggestionsTitleView: TextView? = null
     private var suggestionsView: TextView? = null
-    private var params: WindowManager.LayoutParams? = null
-
-    // V2.3: drag-to-stop target.
     private var stopTarget: TextView? = null
-    private var stopTargetParams: WindowManager.LayoutParams? = null
     private var insideStopZone = false
 
     private val density get() = context.resources.displayMetrics.density
@@ -44,6 +40,7 @@ class OverlayController(
         kmView?.text = "Esperando propuesta"
         kmView?.setTextColor(Color.LTGRAY)
         detailsView?.text = "Incluye recogida + viaje"
+        scoreView?.visibility = View.GONE
         suggestionsTitleView?.visibility = View.GONE
         suggestionsView?.visibility = View.GONE
         suggestionsView?.text = ""
@@ -52,31 +49,17 @@ class OverlayController(
     fun showOffer(offer: RideOffer, thresholds: Thresholds) {
         ensureCreated()
         hourlyView?.text = String.format(Locale.US, "$%.0f/h", offer.pesosPerHour)
-        hourlyView?.setTextColor(
-            scoreColor(
-                offer.pesosPerHour,
-                thresholds.hourlyExcellent,
-                thresholds.hourlyGood
-            )
-        )
-
+        hourlyView?.setTextColor(scoreColor(offer.pesosPerHour, thresholds.hourlyExcellent, thresholds.hourlyGood))
         kmView?.text = String.format(Locale.US, "$%.2f/km", offer.pesosPerKm)
-        kmView?.setTextColor(
-            scoreColor(
-                offer.pesosPerKm,
-                thresholds.kmExcellent,
-                thresholds.kmGood
-            )
-        )
-
+        kmView?.setTextColor(scoreColor(offer.pesosPerKm, thresholds.kmExcellent, thresholds.kmGood))
         detailsView?.text = String.format(
-            Locale.US,
-            "%d min · %.1f km · tarifa %.2f",
-            offer.totalMinutes,
-            offer.totalKilometers,
-            offer.fare
+            Locale.US, "%d min · %.1f km · tarifa %.2f",
+            offer.totalMinutes, offer.totalKilometers, offer.fare
         )
-
+        val score = offer.profitabilityScore(thresholds)
+        scoreView?.visibility = View.VISIBLE
+        scoreView?.text = "Rentabilidad $score/100 · ${offer.profitabilityLabel(thresholds)}"
+        scoreView?.setTextColor(score100Color(score))
         suggestionsTitleView?.visibility = View.VISIBLE
         suggestionsView?.visibility = View.VISIBLE
         suggestionsView?.text = listOf(
@@ -88,18 +71,23 @@ class OverlayController(
 
     fun remove() {
         hideStopTarget()
-        root?.let { runCatching { windowManager.removeView(it) } }
+        val view = root
+        if (view != null) {
+            runCatching { windowManager.removeViewImmediate(view) }
+            clearRegisteredOverlay(view)
+        }
         root = null
         hourlyView = null
         kmView = null
         detailsView = null
+        scoreView = null
         suggestionsTitleView = null
         suggestionsView = null
-        params = null
     }
 
     private fun ensureCreated() {
         if (root != null) return
+        removeAnyOverlay(context)
 
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -125,6 +113,12 @@ class OverlayController(
             textSize = 12f
             setTextColor(Color.LTGRAY)
         }
+        scoreView = TextView(context).apply {
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(4), 0, 0)
+            visibility = View.GONE
+        }
         suggestionsTitleView = TextView(context).apply {
             text = "Pon Tu Precio · mínimo"
             textSize = 12f
@@ -143,6 +137,7 @@ class OverlayController(
         container.addView(hourlyView)
         container.addView(kmView)
         container.addView(detailsView)
+        container.addView(scoreView)
         container.addView(suggestionsTitleView)
         container.addView(suggestionsView)
 
@@ -150,8 +145,7 @@ class OverlayController(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -162,29 +156,16 @@ class OverlayController(
         makeDraggable(container, lp)
         windowManager.addView(container, lp)
         root = container
-        params = lp
+        registerOverlay(windowManager, container)
     }
 
     private fun suggestionLine(offer: RideOffer, targetHourly: Double): String {
         val requiredFare = offer.minimumFareForHourly(targetHourly)
         val delta = requiredFare - offer.fare
-        val targetText = if (targetHourly % 1.0 == 0.0) {
-            targetHourly.toInt().toString()
-        } else {
-            String.format(Locale.US, "%.1f", targetHourly)
-        }
-        val suffix = if (delta > 0.005) {
-            String.format(Locale.US, "  +$%.2f", delta)
-        } else {
-            "  ✓ actual"
-        }
-        return String.format(
-            Locale.US,
-            "%s/h → $%.2f%s",
-            targetText,
-            requiredFare,
-            suffix
-        )
+        val targetText = if (targetHourly % 1.0 == 0.0) targetHourly.toInt().toString()
+        else String.format(Locale.US, "%.1f", targetHourly)
+        val suffix = if (delta > 0.005) String.format(Locale.US, "  +$%.2f", delta) else "  ✓ actual"
+        return String.format(Locale.US, "%s/h → $%.2f%s", targetText, requiredFare, suffix)
     }
 
     private fun makeDraggable(view: View, lp: WindowManager.LayoutParams) {
@@ -206,53 +187,46 @@ class OverlayController(
                     insideStopZone = false
                     true
                 }
-
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-
                     if (!dragging && hypot(dx.toDouble(), dy.toDouble()) >= dragThreshold) {
                         dragging = true
                         showStopTarget()
                     }
-
                     if (dragging) {
                         lp.x = (startX - dx).toInt().coerceAtLeast(0)
                         lp.y = (startY + dy).toInt().coerceAtLeast(0)
                         runCatching { windowManager.updateViewLayout(view, lp) }
-
                         val nowInside = isInsideStopZone(event.rawX, event.rawY)
                         if (nowInside != insideStopZone) {
                             insideStopZone = nowInside
                             setStopTargetActive(nowInside)
-                            if (nowInside) {
-                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            }
+                            if (nowInside) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                         }
                     }
                     true
                 }
-
                 MotionEvent.ACTION_UP -> {
                     val shouldStop = dragging && isInsideStopZone(event.rawX, event.rawY)
                     hideStopTarget()
                     dragging = false
                     insideStopZone = false
-
                     if (shouldStop) {
-                        // Post it so the touch event finishes before the overlay/service are removed.
-                        view.post { onStopRequested() }
+                        view.visibility = View.GONE
+                        view.post {
+                            remove()
+                            onStopRequested()
+                        }
                     }
                     true
                 }
-
                 MotionEvent.ACTION_CANCEL -> {
                     hideStopTarget()
                     dragging = false
                     insideStopZone = false
                     true
                 }
-
                 else -> true
             }
         }
@@ -260,7 +234,6 @@ class OverlayController(
 
     private fun showStopTarget() {
         if (stopTarget != null) return
-
         val size = dp(STOP_TARGET_SIZE_DP)
         val target = TextView(context).apply {
             text = "✕"
@@ -268,12 +241,10 @@ class OverlayController(
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = stopTargetBackground(active = false)
+            background = stopTargetBackground(false)
         }
-
         val lp = WindowManager.LayoutParams(
-            size,
-            size,
+            size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
@@ -282,76 +253,46 @@ class OverlayController(
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.END
             x = dp(STOP_TARGET_RIGHT_MARGIN_DP)
-            // Keep it above Android's gesture/navigation area.
             y = dp(STOP_TARGET_BOTTOM_MARGIN_DP)
         }
-
-        runCatching { windowManager.addView(target, lp) }
-            .onSuccess {
-                stopTarget = target
-                stopTargetParams = lp
-            }
+        runCatching { windowManager.addView(target, lp) }.onSuccess { stopTarget = target }
     }
 
     private fun hideStopTarget() {
-        stopTarget?.let { runCatching { windowManager.removeView(it) } }
+        stopTarget?.let { runCatching { windowManager.removeViewImmediate(it) } }
         stopTarget = null
-        stopTargetParams = null
     }
 
     private fun setStopTargetActive(active: Boolean) {
         stopTarget?.apply {
             background = stopTargetBackground(active)
-            scaleX = if (active) 1.18f else 1.0f
-            scaleY = if (active) 1.18f else 1.0f
+            scaleX = if (active) 1.18f else 1f
+            scaleY = if (active) 1.18f else 1f
         }
     }
 
-    private fun stopTargetBackground(active: Boolean): GradientDrawable {
-        return GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(
-                if (active) {
-                    Color.argb(245, 220, 48, 48)
-                } else {
-                    Color.argb(225, 95, 35, 35)
-                }
-            )
-            setStroke(
-                dp(if (active) 3 else 2),
-                if (active) Color.WHITE else Color.argb(180, 255, 255, 255)
-            )
-        }
+    private fun stopTargetBackground(active: Boolean) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(if (active) Color.argb(245, 220, 48, 48) else Color.argb(225, 95, 35, 35))
+        setStroke(dp(if (active) 3 else 2), if (active) Color.WHITE else Color.argb(180, 255, 255, 255))
     }
 
     private fun isInsideStopZone(rawX: Float, rawY: Float): Boolean {
         val (screenWidth, screenHeight) = screenSize()
         val size = dp(STOP_TARGET_SIZE_DP).toFloat()
-        val rightMargin = dp(STOP_TARGET_RIGHT_MARGIN_DP).toFloat()
-        val bottomMargin = dp(STOP_TARGET_BOTTOM_MARGIN_DP).toFloat()
-
-        val centerX = screenWidth - rightMargin - size / 2f
-        val centerY = screenHeight - bottomMargin - size / 2f
-
-        // Slightly larger hit area than the visible circle.
-        val radius = size * 0.85f
-        return hypot(
-            (rawX - centerX).toDouble(),
-            (rawY - centerY).toDouble()
-        ) <= radius
+        val centerX = screenWidth - dp(STOP_TARGET_RIGHT_MARGIN_DP) - size / 2f
+        val centerY = screenHeight - dp(STOP_TARGET_BOTTOM_MARGIN_DP) - size / 2f
+        return hypot((rawX - centerX).toDouble(), (rawY - centerY).toDouble()) <= size * 0.85f
     }
 
-    private fun screenSize(): Pair<Float, Float> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val bounds = windowManager.maximumWindowMetrics.bounds
-            bounds.width().toFloat() to bounds.height().toFloat()
+    private fun screenSize(): Pair<Float, Float> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val b = windowManager.maximumWindowMetrics.bounds
+            b.width().toFloat() to b.height().toFloat()
         } else {
             @Suppress("DEPRECATION")
-            context.resources.displayMetrics.run {
-                widthPixels.toFloat() to heightPixels.toFloat()
-            }
+            context.resources.displayMetrics.run { widthPixels.toFloat() to heightPixels.toFloat() }
         }
-    }
 
     private fun scoreColor(value: Double, excellent: Double, good: Double): Int = when {
         value >= excellent -> Color.rgb(76, 217, 100)
@@ -359,9 +300,39 @@ class OverlayController(
         else -> Color.rgb(255, 69, 58)
     }
 
+    private fun score100Color(score: Int): Int = when {
+        score >= 70 -> Color.rgb(76, 217, 100)
+        score >= 50 -> Color.rgb(255, 204, 0)
+        else -> Color.rgb(255, 69, 58)
+    }
+
     companion object {
         private const val STOP_TARGET_SIZE_DP = 82
         private const val STOP_TARGET_RIGHT_MARGIN_DP = 22
         private const val STOP_TARGET_BOTTOM_MARGIN_DP = 86
+
+        @Volatile private var registeredView: View? = null
+        @Volatile private var registeredWindowManager: WindowManager? = null
+
+        private fun registerOverlay(wm: WindowManager, view: View) {
+            registeredWindowManager = wm
+            registeredView = view
+        }
+
+        private fun clearRegisteredOverlay(view: View) {
+            if (registeredView === view) {
+                registeredView = null
+                registeredWindowManager = null
+            }
+        }
+
+        fun removeAnyOverlay(context: Context) {
+            val view = registeredView ?: return
+            val wm = registeredWindowManager
+                ?: context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            runCatching { wm.removeViewImmediate(view) }
+            registeredView = null
+            registeredWindowManager = null
+        }
     }
 }

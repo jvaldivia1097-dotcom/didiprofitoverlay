@@ -37,6 +37,7 @@ class CaptureService : Service() {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val ocrBusy = AtomicBoolean(false)
 
+    @Volatile private var isStopping = false
     private var lastFrameAt = 0L
     private var lastOfferAt = 0L
     private var lastSignature = ""
@@ -47,27 +48,28 @@ class CaptureService : Service() {
 
     private lateinit var overlay: OverlayController
     private lateinit var preferences: ProfitPreferences
+    private lateinit var history: HistoryRepository
 
     override fun onCreate() {
         super.onCreate()
-        overlay = OverlayController(this) {
-            // V2.3: dropping the overlay on the X shuts down the whole analysis service.
-            stopSelf()
-        }
+        OverlayController.removeAnyOverlay(this)
+        overlay = OverlayController(this) { requestStop() }
         preferences = ProfitPreferences(this)
+        history = HistoryRepository(this)
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopSelf()
+            requestStop()
             return START_NOT_STICKY
         }
+        if (isStopping) return START_NOT_STICKY
 
         startForegroundCompat()
 
         if (!Settings.canDrawOverlays(this)) {
-            stopSelf()
+            requestStop()
             return START_NOT_STICKY
         }
 
@@ -76,16 +78,35 @@ class CaptureService : Service() {
             @Suppress("DEPRECATION")
             val resultData = intent?.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
             if (resultCode == Int.MIN_VALUE || resultData == null) {
-                stopSelf()
+                requestStop()
                 return START_NOT_STICKY
             }
             startProjection(resultCode, resultData)
         }
-
         return START_NOT_STICKY
     }
 
+    private fun requestStop() {
+        if (isStopping) return
+        isStopping = true
+
+        mainHandler.removeCallbacksAndMessages(null)
+        if (::overlay.isInitialized) overlay.remove()
+        OverlayController.removeAnyOverlay(this)
+
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        stopSelf()
+    }
+
+    private fun postOverlay(action: () -> Unit) {
+        if (isStopping) return
+        mainHandler.post {
+            if (!isStopping) action()
+        }
+    }
+
     private fun startProjection(resultCode: Int, data: Intent) {
+        if (isStopping) return
         overlay.showWaiting()
 
         val projectionManager =
@@ -95,7 +116,7 @@ class CaptureService : Service() {
 
         projection.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                stopSelf()
+                requestStop()
             }
         }, mainHandler)
 
@@ -105,22 +126,20 @@ class CaptureService : Service() {
             bounds.width() to bounds.height()
         } else {
             @Suppress("DEPRECATION")
-            val metrics = resources.displayMetrics
-            metrics.widthPixels to metrics.heightPixels
+            resources.displayMetrics.run { widthPixels to heightPixels }
         }
 
         workerThread = HandlerThread("didi-ocr").also { it.start() }
         workerHandler = Handler(workerThread!!.looper)
 
-        imageReader = ImageReader.newInstance(
-            width,
-            height,
-            PixelFormat.RGBA_8888,
-            3
-        ).also { reader ->
+        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also { reader ->
             reader.setOnImageAvailableListener({ source ->
                 val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-                queueOrProcessImage(image)
+                if (isStopping) {
+                    image.close()
+                } else {
+                    queueOrProcessImage(image)
+                }
             }, workerHandler)
         }
 
@@ -137,9 +156,13 @@ class CaptureService : Service() {
     }
 
     private fun queueOrProcessImage(image: Image) {
+        if (isStopping) {
+            image.close()
+            return
+        }
+
         val now = System.currentTimeMillis()
         val canProcessNow = !ocrBusy.get() && now - lastFrameAt >= FRAME_INTERVAL_MS
-
         if (canProcessNow) {
             val stale = synchronized(pendingLock) {
                 val old = pendingImage
@@ -147,7 +170,6 @@ class CaptureService : Service() {
                 old
             }
             stale?.close()
-
             lastFrameAt = now
             processImage(image)
             return
@@ -161,35 +183,31 @@ class CaptureService : Service() {
     }
 
     private fun schedulePendingDrain() {
+        if (isStopping) return
         val handler = workerHandler ?: return
         if (pendingDrainScheduled) return
 
-        val now = System.currentTimeMillis()
-        val elapsed = now - lastFrameAt
-        val delay = if (ocrBusy.get()) {
-            OCR_BUSY_RETRY_MS
-        } else {
-            maxOf(OCR_BUSY_RETRY_MS, FRAME_INTERVAL_MS - elapsed)
-        }
+        val elapsed = System.currentTimeMillis() - lastFrameAt
+        val delay = if (ocrBusy.get()) OCR_BUSY_RETRY_MS
+        else maxOf(OCR_BUSY_RETRY_MS, FRAME_INTERVAL_MS - elapsed)
 
         pendingDrainScheduled = true
         handler.postDelayed({
             pendingDrainScheduled = false
-            drainPendingImage()
+            if (!isStopping) drainPendingImage()
         }, delay)
     }
 
     private fun drainPendingImage() {
-        val hasPending = synchronized(pendingLock) { pendingImage != null }
-        if (!hasPending) return
+        if (isStopping) return
+        if (synchronized(pendingLock) { pendingImage == null }) return
 
         if (ocrBusy.get()) {
             schedulePendingDrain()
             return
         }
 
-        val now = System.currentTimeMillis()
-        val elapsed = now - lastFrameAt
+        val elapsed = System.currentTimeMillis() - lastFrameAt
         if (elapsed < FRAME_INTERVAL_MS) {
             schedulePendingDrain()
             return
@@ -201,11 +219,16 @@ class CaptureService : Service() {
             latest
         } ?: return
 
-        lastFrameAt = now
+        lastFrameAt = System.currentTimeMillis()
         processImage(image)
     }
 
     private fun processImage(image: Image) {
+        if (isStopping) {
+            image.close()
+            return
+        }
+
         ocrBusy.set(true)
         val bitmap = try {
             imageToBitmap(image)
@@ -215,21 +238,18 @@ class CaptureService : Service() {
 
         if (bitmap == null) {
             ocrBusy.set(false)
-            workerHandler?.post { drainPendingImage() }
+            if (!isStopping) workerHandler?.post { drainPendingImage() }
             return
         }
 
-        val input = InputImage.fromBitmap(bitmap, 0)
-        recognizer.process(input)
+        recognizer.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { result ->
+                if (isStopping) return@addOnSuccessListener
+
                 val lines = result.textBlocks.flatMap { block ->
                     block.lines.map { line ->
                         val box = line.boundingBox
-                        OcrLine(
-                            text = line.text,
-                            centerY = box?.centerY() ?: 0,
-                            height = box?.height() ?: 0
-                        )
+                        OcrLine(line.text, box?.centerY() ?: 0, box?.height() ?: 0)
                     }
                 }.sortedBy { it.centerY }
 
@@ -237,7 +257,7 @@ class CaptureService : Service() {
                 if (OfferParser.isOfferInactive(lines)) {
                     lastOfferAt = 0L
                     lastSignature = ""
-                    mainHandler.post { overlay.showWaiting() }
+                    postOverlay { overlay.showWaiting() }
                     return@addOnSuccessListener
                 }
 
@@ -245,27 +265,38 @@ class CaptureService : Service() {
                 if (offer != null && isPlausible(offer)) {
                     lastOfferAt = now
                     val signature =
-                        "${offer.fare}|${offer.totalMinutes}|${"%.3f".format(offer.totalKilometers)}"
-                    if (signature != lastSignature) lastSignature = signature
-                    mainHandler.post { overlay.showOffer(offer, preferences.load()) }
+                        "${offer.fare}|${offer.pickup.minutes}|${"%.3f".format(offer.pickup.kilometers)}|" +
+                            "${offer.trip.minutes}|${"%.3f".format(offer.trip.kilometers)}"
+                    val thresholds = preferences.load()
+
+                    if (signature != lastSignature) {
+                        lastSignature = signature
+                        workerHandler?.post {
+                            if (!isStopping) {
+                                history.recordOrMerge(offer, thresholds)
+                            }
+                        }
+                    }
+
+                    postOverlay { overlay.showOffer(offer, thresholds) }
                 } else if (now - lastOfferAt > WAITING_RESET_MS) {
-                    mainHandler.post { overlay.showWaiting() }
+                    lastSignature = ""
+                    postOverlay { overlay.showWaiting() }
                 }
             }
             .addOnCompleteListener {
                 bitmap.recycle()
                 ocrBusy.set(false)
-                workerHandler?.post { drainPendingImage() }
+                if (!isStopping) workerHandler?.post { drainPendingImage() }
             }
     }
 
-    private fun isPlausible(offer: RideOffer): Boolean {
-        return offer.fare in 10.0..3000.0 &&
+    private fun isPlausible(offer: RideOffer): Boolean =
+        offer.fare in 10.0..3000.0 &&
             offer.totalMinutes in 2..360 &&
             offer.totalKilometers in 0.2..500.0 &&
             offer.pesosPerHour in 20.0..5000.0 &&
             offer.pesosPerKm in 0.5..500.0
-    }
 
     private fun imageToBitmap(image: Image): Bitmap? {
         val plane = image.planes.firstOrNull() ?: return null
@@ -275,21 +306,35 @@ class CaptureService : Service() {
         val rowPadding = rowStride - pixelStride * image.width
         val paddedWidth = image.width + rowPadding / pixelStride
 
-        val padded = Bitmap.createBitmap(
-            paddedWidth,
-            image.height,
-            Bitmap.Config.ARGB_8888
-        )
+        val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
         padded.copyPixelsFromBuffer(buffer)
         val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
         if (padded !== cropped) padded.recycle()
-        return cropped
+
+        // V3: remove only the status-bar strip, which never contains offer data.
+        // This reduces OCR noise without risking the full-screen or carousel cards.
+        val top = (cropped.height * 0.035).toInt().coerceAtLeast(0)
+        val content = if (top > 0 && cropped.height - top > 100) {
+            Bitmap.createBitmap(cropped, 0, top, cropped.width, cropped.height - top).also {
+                if (it !== cropped) cropped.recycle()
+            }
+        } else {
+            cropped
+        }
+
+        // Avoid processing unnecessarily huge screenshots on higher-resolution devices.
+        if (content.width > 1080) {
+            val newHeight = (content.height * (1080.0 / content.width)).toInt()
+            return Bitmap.createScaledBitmap(content, 1080, newHeight, true).also {
+                if (it !== content) content.recycle()
+            }
+        }
+        return content
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
                     "Análisis de viajes",
@@ -326,6 +371,12 @@ class CaptureService : Service() {
     }
 
     override fun onDestroy() {
+        isStopping = true
+        mainHandler.removeCallbacksAndMessages(null)
+
+        if (::overlay.isInitialized) overlay.remove()
+        OverlayController.removeAnyOverlay(this)
+
         imageReader?.setOnImageAvailableListener(null, null)
 
         synchronized(pendingLock) {
@@ -334,7 +385,6 @@ class CaptureService : Service() {
         }
 
         workerHandler?.removeCallbacksAndMessages(null)
-
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
@@ -342,17 +392,13 @@ class CaptureService : Service() {
 
         runCatching { mediaProjection?.stop() }
         mediaProjection = null
-
-        recognizer.close()
-        overlay.remove()
+        runCatching { recognizer.close() }
 
         workerThread?.quitSafely()
         workerThread = null
         workerHandler = null
 
-        // Explicitly remove the foreground notification too.
-        stopForeground(STOP_FOREGROUND_REMOVE)
-
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         super.onDestroy()
     }
 
