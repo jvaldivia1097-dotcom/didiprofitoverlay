@@ -11,8 +11,8 @@ android {
         applicationId = "com.jonathan.didiprofit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.3.1"
+        versionCode = 10
+        versionName = "0.3.2"
 
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }

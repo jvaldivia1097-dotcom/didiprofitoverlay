@@ -70,8 +70,20 @@ class HistoryRepository(context: Context) {
             while (it.moveToNext()) {
                 val existing = row(it)
                 if (sameProposal(existing, offer)) {
-                    val values = valuesFor(offer, thresholds, now).apply {
-                        put("first_seen", existing.firstSeen)
+                    /*
+                     * V3.2: a duplicate must NOT replace the original numeric data.
+                     *
+                     * OCR can read the same proposal a second time with a tiny variation
+                     * (for example 27 min -> 28 min). Before V3.2 that later reading
+                     * overwrote fare/route/pph/ppkm/score and could slightly distort
+                     * statistics and Top 10 rankings.
+                     *
+                     * The first valid reading is now the canonical record. A duplicate
+                     * only refreshes last_seen and, when enough time has passed,
+                     * increments seen_count.
+                     */
+                    val values = ContentValues().apply {
+                        put("last_seen", now)
                         put(
                             "seen_count",
                             existing.seenCount + if (now - existing.lastSeen >= REAPPEAR_GAP_MS) 1 else 0
