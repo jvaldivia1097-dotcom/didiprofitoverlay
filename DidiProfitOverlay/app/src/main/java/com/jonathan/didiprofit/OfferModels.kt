@@ -28,11 +28,6 @@ data class RideOffer(
         return ceil((raw - 1e-9) * 100.0) / 100.0
     }
 
-    /**
-     * V3 score (0..100).
-     * 65% hourly profitability + 35% per-km profitability.
-     * "Good" = 50 points in each component, "Excellent" = 100.
-     */
     fun profitabilityScore(t: Thresholds): Int {
         fun component(value: Double, good: Double, excellent: Double): Double {
             if (value <= 0.0) return 0.0
@@ -65,5 +60,8 @@ data class RideOffer(
 data class OcrLine(
     val text: String,
     val centerY: Int = 0,
-    val height: Int = 0
+    val height: Int = 0,
+    val centerX: Int = 0,
+    val left: Int = 0,
+    val right: Int = 0
 )

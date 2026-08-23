@@ -45,7 +45,7 @@ class HistoryActivity : Activity() {
         })
 
         content.addView(TextView(this).apply {
-            text = "V3.2 guarda únicamente los datos numéricos de las propuestas. No guarda capturas."
+            text = "V3.3 guarda únicamente los datos numéricos de las propuestas. No guarda capturas."
             textSize = 13f
             setTextColor(Color.DKGRAY)
             setPadding(0, dp(5), 0, dp(14))
