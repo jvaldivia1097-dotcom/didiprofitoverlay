@@ -23,6 +23,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.atomic.AtomicBoolean
@@ -223,6 +224,13 @@ class CaptureService : Service() {
         processImage(image)
     }
 
+    /**
+     * V3.1 OCR strategy:
+     * 1) OCR only the lower 75% where DiDi offer cards live. This cuts map/navigation noise.
+     * 2) If that pass cannot construct a proposal, retry once using the full screen.
+     *
+     * Successful offers normally need only the faster first pass.
+     */
     private fun processImage(image: Image) {
         if (isStopping) {
             image.close()
@@ -230,65 +238,136 @@ class CaptureService : Service() {
         }
 
         ocrBusy.set(true)
-        val bitmap = try {
+        val fullBitmap = try {
             imageToBitmap(image)
         } finally {
             image.close()
         }
 
-        if (bitmap == null) {
-            ocrBusy.set(false)
-            if (!isStopping) workerHandler?.post { drainPendingImage() }
+        if (fullBitmap == null) {
+            finishOcr()
+            return
+        }
+
+        val primary = createOfferRegion(fullBitmap)
+        runRecognition(
+            bitmap = primary,
+            fullBitmap = fullBitmap,
+            isPrimary = primary !== fullBitmap
+        )
+    }
+
+    private fun runRecognition(
+        bitmap: Bitmap,
+        fullBitmap: Bitmap,
+        isPrimary: Boolean
+    ) {
+        if (isStopping) {
+            if (bitmap !== fullBitmap && !bitmap.isRecycled) bitmap.recycle()
+            if (!fullBitmap.isRecycled) fullBitmap.recycle()
+            finishOcr()
             return
         }
 
         recognizer.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { result ->
-                if (isStopping) return@addOnSuccessListener
-
-                val lines = result.textBlocks.flatMap { block ->
-                    block.lines.map { line ->
-                        val box = line.boundingBox
-                        OcrLine(line.text, box?.centerY() ?: 0, box?.height() ?: 0)
-                    }
-                }.sortedBy { it.centerY }
-
-                val now = System.currentTimeMillis()
-                if (OfferParser.isOfferInactive(lines)) {
-                    lastOfferAt = 0L
-                    lastSignature = ""
-                    postOverlay { overlay.showWaiting() }
+                if (isStopping) {
+                    if (bitmap !== fullBitmap && !bitmap.isRecycled) bitmap.recycle()
+                    if (!fullBitmap.isRecycled) fullBitmap.recycle()
+                    finishOcr()
                     return@addOnSuccessListener
                 }
 
-                val offer = OfferParser.parse(lines)
-                if (offer != null && isPlausible(offer)) {
-                    lastOfferAt = now
-                    val signature =
-                        "${offer.fare}|${offer.pickup.minutes}|${"%.3f".format(offer.pickup.kilometers)}|" +
-                            "${offer.trip.minutes}|${"%.3f".format(offer.trip.kilometers)}"
-                    val thresholds = preferences.load()
+                val lines = extractLines(result)
+                val handled = handleRecognizedLines(lines, finalAttempt = !isPrimary)
 
-                    if (signature != lastSignature) {
-                        lastSignature = signature
-                        workerHandler?.post {
-                            if (!isStopping) {
-                                history.recordOrMerge(offer, thresholds)
-                            }
-                        }
-                    }
-
-                    postOverlay { overlay.showOffer(offer, thresholds) }
-                } else if (now - lastOfferAt > WAITING_RESET_MS) {
-                    lastSignature = ""
-                    postOverlay { overlay.showWaiting() }
+                if (handled) {
+                    if (bitmap !== fullBitmap && !bitmap.isRecycled) bitmap.recycle()
+                    if (!fullBitmap.isRecycled) fullBitmap.recycle()
+                    finishOcr()
+                } else if (isPrimary) {
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                    runRecognition(
+                        bitmap = fullBitmap,
+                        fullBitmap = fullBitmap,
+                        isPrimary = false
+                    )
+                } else {
+                    if (!fullBitmap.isRecycled) fullBitmap.recycle()
+                    finishOcr()
                 }
             }
-            .addOnCompleteListener {
-                bitmap.recycle()
-                ocrBusy.set(false)
-                if (!isStopping) workerHandler?.post { drainPendingImage() }
+            .addOnFailureListener {
+                if (bitmap !== fullBitmap && !bitmap.isRecycled) bitmap.recycle()
+
+                if (isPrimary && !isStopping) {
+                    runRecognition(
+                        bitmap = fullBitmap,
+                        fullBitmap = fullBitmap,
+                        isPrimary = false
+                    )
+                } else {
+                    if (!fullBitmap.isRecycled) fullBitmap.recycle()
+                    finishOcr()
+                }
             }
+    }
+
+    private fun extractLines(result: Text): List<OcrLine> =
+        result.textBlocks.flatMap { block ->
+            block.lines.map { line ->
+                val box = line.boundingBox
+                OcrLine(line.text, box?.centerY() ?: 0, box?.height() ?: 0)
+            }
+        }.sortedBy { it.centerY }
+
+    /**
+     * Returns true when the OCR result already produced a definitive state
+     * (valid offer or inactive-offer message). On the primary ROI pass, a miss
+     * returns false so the full-screen fallback can run before showing "waiting".
+     */
+    private fun handleRecognizedLines(lines: List<OcrLine>, finalAttempt: Boolean): Boolean {
+        val now = System.currentTimeMillis()
+
+        if (OfferParser.isOfferInactive(lines)) {
+            lastOfferAt = 0L
+            lastSignature = ""
+            postOverlay { overlay.showWaiting() }
+            return true
+        }
+
+        val offer = OfferParser.parse(lines)
+        if (offer != null && isPlausible(offer)) {
+            lastOfferAt = now
+            val signature =
+                "${offer.fare}|${offer.pickup.minutes}|${"%.3f".format(offer.pickup.kilometers)}|" +
+                    "${offer.trip.minutes}|${"%.3f".format(offer.trip.kilometers)}"
+            val thresholds = preferences.load()
+
+            if (signature != lastSignature) {
+                lastSignature = signature
+                workerHandler?.post {
+                    if (!isStopping) {
+                        history.recordOrMerge(offer, thresholds)
+                    }
+                }
+            }
+
+            postOverlay { overlay.showOffer(offer, thresholds) }
+            return true
+        }
+
+        if (finalAttempt && now - lastOfferAt > WAITING_RESET_MS) {
+            lastSignature = ""
+            postOverlay { overlay.showWaiting() }
+        }
+
+        return false
+    }
+
+    private fun finishOcr() {
+        ocrBusy.set(false)
+        if (!isStopping) workerHandler?.post { drainPendingImage() }
     }
 
     private fun isPlausible(offer: RideOffer): Boolean =
@@ -311,8 +390,7 @@ class CaptureService : Service() {
         val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
         if (padded !== cropped) padded.recycle()
 
-        // V3: remove only the status-bar strip, which never contains offer data.
-        // This reduces OCR noise without risking the full-screen or carousel cards.
+        // Remove only the status bar.
         val top = (cropped.height * 0.035).toInt().coerceAtLeast(0)
         val content = if (top > 0 && cropped.height - top > 100) {
             Bitmap.createBitmap(cropped, 0, top, cropped.width, cropped.height - top).also {
@@ -322,7 +400,7 @@ class CaptureService : Service() {
             cropped
         }
 
-        // Avoid processing unnecessarily huge screenshots on higher-resolution devices.
+        // Keep enough detail for small "m/km" text while reducing OCR cost.
         if (content.width > 1080) {
             val newHeight = (content.height * (1080.0 / content.width)).toInt()
             return Bitmap.createScaledBitmap(content, 1080, newHeight, true).also {
@@ -330,6 +408,15 @@ class CaptureService : Service() {
             }
         }
         return content
+    }
+
+    private fun createOfferRegion(full: Bitmap): Bitmap {
+        if (full.height < 400) return full
+        val top = (full.height * PRIMARY_REGION_TOP_RATIO).toInt()
+            .coerceIn(0, full.height - 200)
+
+        if (top <= 0) return full
+        return Bitmap.createBitmap(full, 0, top, full.width, full.height - top)
     }
 
     private fun createNotificationChannel() {
@@ -410,8 +497,13 @@ class CaptureService : Service() {
         const val EXTRA_RESULT_DATA = "result_data"
         private const val CHANNEL_ID = "didi_profit_capture"
         private const val NOTIFICATION_ID = 1042
-        private const val FRAME_INTERVAL_MS = 450L
-        private const val OCR_BUSY_RETRY_MS = 80L
+
+        // Faster reaction than V3 while still keeping one latest pending frame.
+        private const val FRAME_INTERVAL_MS = 320L
+        private const val OCR_BUSY_RETRY_MS = 60L
         private const val WAITING_RESET_MS = 3500L
+
+        // First OCR pass starts at 25% of the usable screenshot height.
+        private const val PRIMARY_REGION_TOP_RATIO = 0.25
     }
 }

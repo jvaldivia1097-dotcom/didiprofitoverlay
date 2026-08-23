@@ -3,19 +3,27 @@ package com.jonathan.didiprofit
 import java.text.Normalizer
 import kotlin.math.max
 
-/** Parser tuned for the current DiDi Conductor offer layouts used in Mexico. */
+/**
+ * Parser tuned for the current DiDi Conductor offer layouts used in Mexico.
+ *
+ * V3.1:
+ * - ignores overlay-generated route-summary lines
+ * - tolerates OCR losing/misreading the "$" symbol on the main fare
+ * - keeps secondary monetary rows ("adicionales", "tarifa base dinámica", etc.) out
+ * - preserves geometry-aware grouping for carousel and full-screen offers
+ */
 object OfferParser {
-    private val fareRegex = Regex("\\$\\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)")
+    private val strictFareRegex = Regex("""(?:\$|＄|S)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)""")
+    private val looseFareRegex = Regex("""(?<!\d)([0-9]{2,4}[.,][0-9]{2})(?!\d)""")
 
     /**
-     * Supports both DiDi layouts seen in practice:
+     * Supports:
      * - Carousel: "(5 min 648 m)" / "(17 min 6.8 km)"
-     * - Full-screen incoming offer: "6min (2.7km)" / "15min (6.9km)"
-     *
-     * OCR may insert/remove spaces, so all spacing and the parentheses around distance are optional.
+     * - Full-screen: "6min (2.7km)" / "15min (6.9km)"
+     * - OCR variants with optional parentheses/spaces.
      */
     private val routeRegex = Regex(
-        "(?i)([0-9]{1,3})\\s*(?:min|minuto|minutos)\\s*(?:\\(\\s*)?([0-9]+(?:[.,][0-9]+)?)\\s*(km|m)\\s*\\)?"
+        """(?i)([0-9]{1,3})\s*(?:min|minuto|minutos)\s*(?:\(\s*)?([0-9]+(?:[.,][0-9]+)?)\s*(km|m)\s*\)?"""
     )
 
     private val inactiveMarkers = listOf(
@@ -28,17 +36,6 @@ object OfferParser {
         "este viaje ya fue aceptado"
     )
 
-    /**
-     * Monetary rows that are NOT the offer's main fare.
-     *
-     * Example full-screen card:
-     *   $176.17                 <- main fare
-     *   $17.00 adicionales     <- secondary component
-     *   $10.15 de tarifa base dinámica <- secondary component
-     *
-     * Before V2.4, OCR could give those secondary rows a similar bounding-box height,
-     * causing geometry grouping to pair the route with one of them instead of $176.17.
-     */
     private val secondaryFareMarkers = listOf(
         "adicional",
         "tarifa base dinamica",
@@ -59,33 +56,76 @@ object OfferParser {
         if (lines.isEmpty() || isOfferInactive(lines)) return null
 
         val cleaned = lines.map { it.copy(text = normalize(it.text)) }
+
+        // Important V3.1 fix: never use route totals printed by our own overlay
+        // as pickup/trip rows for the next DiDi proposal.
         val metrics = cleaned.mapNotNull { line ->
-            parseRouteMetric(line.text)?.let { line to it }
+            if (isOverlayLine(line.text) || isSecondaryFareLine(line.text)) {
+                null
+            } else {
+                parseRouteMetric(line.text)?.let { line to it }
+            }
         }.sortedBy { it.first.centerY }
 
-        if (metrics.size < 2) return null
-
-        val fares = cleaned.mapNotNull { line ->
-            if (isOverlayLine(line.text) || isSecondaryFareLine(line.text)) {
-                return@mapNotNull null
-            }
-            val match = fareRegex.find(line.text) ?: return@mapNotNull null
-            val value = match.groupValues[1].replace(',', '.').toDoubleOrNull()
-                ?: return@mapNotNull null
-            FareCandidate(value, line.centerY, line.height, line.text)
+        if (metrics.size < 2) {
+            return parseSimpleText(cleaned.joinToString("\n") { it.text })
         }
 
-        if (fares.isEmpty()) return null
+        val strictFares = cleaned.mapNotNull { line ->
+            fareCandidate(line, strict = true)
+        }
 
-        // The main fare is usually visually larger than Pon Tu Precio chips.
-        val maxHeight = fares.maxOfOrNull { it.height } ?: 0
+        parseWithCandidates(strictFares, metrics)?.let { return it }
+
+        // If ML Kit dropped the "$" symbol (common on large white fare text),
+        // try a conservative geometry/size-based numeric fare candidate.
+        val looseFares = cleaned.mapNotNull { line ->
+            fareCandidate(line, strict = false)
+        }
+
+        parseWithCandidates(looseFares, metrics)?.let { return it }
+
+        return parseSimpleText(cleaned.joinToString("\n") { it.text })
+    }
+
+    fun parseSimpleText(raw: String): RideOffer? {
+        val normalized = normalize(raw)
+        if (inactiveMarkers.any { fold(normalized).contains(it) }) return null
+
+        val lines = normalized.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val metricMatches = lines
+            .filterNot { isOverlayLine(it) || isSecondaryFareLine(it) }
+            .flatMap { routeRegex.findAll(it).toList() }
+
+        if (metricMatches.size < 2) return null
+
+        val fare = firstFareFromLines(lines, strict = true)
+            ?: firstFareFromLines(lines, strict = false)
+            ?: return null
+
+        val pickup = metricFromMatch(metricMatches[0]) ?: return null
+        val trip = metricFromMatch(metricMatches[1]) ?: return null
+        return RideOffer(fare, pickup, trip)
+    }
+
+    private fun parseWithCandidates(
+        inputFares: List<FareCandidate>,
+        metrics: List<Pair<OcrLine, RouteMetric>>
+    ): RideOffer? {
+        if (inputFares.isEmpty()) return null
+
+        val maxHeight = inputFares.maxOfOrNull { it.height } ?: 0
         val likelyMainFares = if (maxHeight > 0) {
-            fares.filter { it.height >= max(1, (maxHeight * 0.72).toInt()) }
-        } else fares
+            inputFares.filter { it.height >= max(1, (maxHeight * 0.68).toInt()) }
+        } else {
+            inputFares
+        }
 
-        val candidates = likelyMainFares.ifEmpty { fares }.sortedBy { it.y }
+        val candidates = likelyMainFares.ifEmpty { inputFares }.sortedBy { it.y }
 
-        // Geometry-aware grouping: use the first two route rows below the main fare.
         for ((index, fare) in candidates.withIndex()) {
             val nextFareY = candidates.getOrNull(index + 1)?.y ?: Int.MAX_VALUE
             val below = metrics.filter { (line, _) ->
@@ -96,31 +136,46 @@ object OfferParser {
                 return RideOffer(fare.value, below[0].second, below[1].second)
             }
         }
-
-        // Fallback for OCR results without useful bounding boxes.
-        return parseSimpleText(cleaned.joinToString("\n") { it.text })
+        return null
     }
 
-    fun parseSimpleText(raw: String): RideOffer? {
-        val text = normalize(raw)
-        if (inactiveMarkers.any { fold(text).contains(it) }) return null
+    private fun fareCandidate(line: OcrLine, strict: Boolean): FareCandidate? {
+        if (isOverlayLine(line.text) || isSecondaryFareLine(line.text)) return null
+        if (parseRouteMetric(line.text) != null) return null
 
-        val metricMatches = routeRegex.findAll(text).toList()
-        if (metricMatches.size < 2) return null
+        val folded = fold(line.text)
+        if (folded.contains("viajes") || folded.contains("punto") || folded.contains("rating")) {
+            return null
+        }
 
-        val fare = fareRegex.findAll(text)
-            .firstOrNull {
-                val line = contextLine(text, it.range.first)
-                !isOverlayLine(line) && !isSecondaryFareLine(line)
-            }
-            ?.groupValues?.get(1)
-            ?.replace(',', '.')
-            ?.toDoubleOrNull()
+        val match = (if (strict) strictFareRegex.find(line.text) else looseFareRegex.find(line.text))
             ?: return null
 
-        val pickup = metricFromMatch(metricMatches[0]) ?: return null
-        val trip = metricFromMatch(metricMatches[1]) ?: return null
-        return RideOffer(fare, pickup, trip)
+        val value = match.groupValues[1]
+            .replace(',', '.')
+            .toDoubleOrNull()
+            ?: return null
+
+        if (value !in 10.0..3000.0) return null
+        return FareCandidate(value, line.centerY, line.height, line.text)
+    }
+
+    private fun firstFareFromLines(lines: List<String>, strict: Boolean): Double? {
+        for (line in lines) {
+            if (isOverlayLine(line) || isSecondaryFareLine(line)) continue
+            if (parseRouteMetric(line) != null) continue
+
+            val folded = fold(line)
+            if (folded.contains("viajes") || folded.contains("punto") || folded.contains("rating")) {
+                continue
+            }
+
+            val match = (if (strict) strictFareRegex.find(line) else looseFareRegex.find(line))
+                ?: continue
+            val value = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: continue
+            if (value in 10.0..3000.0) return value
+        }
+        return null
     }
 
     private fun parseRouteMetric(text: String): RouteMetric? {
@@ -164,20 +219,16 @@ object OfferParser {
     }
 
     private fun isOverlayLine(text: String): Boolean {
-        val lower = text.lowercase()
+        val lower = fold(text)
         return lower.contains("/h") ||
             lower.contains("/km") ||
             lower.contains("rentabilidad") ||
             lower.contains("analizando didi") ||
-            lower.contains("pon tu precio · mínimo")
-    }
-
-    private fun contextLine(text: String, index: Int): String {
-        val start = text.lastIndexOf('\n', maxOf(0, index - 1))
-            .let { if (it < 0) 0 else it + 1 }
-        val end = text.indexOf('\n', index)
-            .let { if (it < 0) text.length else it }
-        return text.substring(start, end)
+            lower.contains("esperando propuesta") ||
+            lower.contains("incluye recogida") ||
+            lower.contains("pon tu precio minimo") ||
+            lower.contains("puntaje") ||
+            (lower.contains("tarifa") && lower.contains("min") && lower.contains("km"))
     }
 
     private data class FareCandidate(

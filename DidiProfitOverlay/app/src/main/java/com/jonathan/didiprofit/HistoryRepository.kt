@@ -33,6 +33,12 @@ data class HistoryStats(
     val bestKm: Double = 0.0
 )
 
+enum class HistoryTopMode {
+    SCORE,
+    HOURLY,
+    KM
+}
+
 class HistoryRepository(context: Context) {
     private val dbHelper = Db(context.applicationContext)
 
@@ -66,7 +72,10 @@ class HistoryRepository(context: Context) {
                 if (sameProposal(existing, offer)) {
                     val values = valuesFor(offer, thresholds, now).apply {
                         put("first_seen", existing.firstSeen)
-                        put("seen_count", existing.seenCount + if (now - existing.lastSeen >= REAPPEAR_GAP_MS) 1 else 0)
+                        put(
+                            "seen_count",
+                            existing.seenCount + if (now - existing.lastSeen >= REAPPEAR_GAP_MS) 1 else 0
+                        )
                     }
                     db.update(TABLE, values, "id = ?", arrayOf(existing.id.toString()))
                     return false
@@ -93,6 +102,33 @@ class HistoryRepository(context: Context) {
             null,
             "last_seen DESC",
             limit.coerceIn(1, 300).toString()
+        ).use {
+            while (it.moveToNext()) result += row(it)
+        }
+        return result
+    }
+
+    fun topSince(
+        since: Long,
+        mode: HistoryTopMode,
+        limit: Int = 10
+    ): List<HistoryEntry> {
+        val orderBy = when (mode) {
+            HistoryTopMode.SCORE -> "score DESC, pph DESC, ppkm DESC, last_seen DESC"
+            HistoryTopMode.HOURLY -> "pph DESC, ppkm DESC, score DESC, last_seen DESC"
+            HistoryTopMode.KM -> "ppkm DESC, pph DESC, score DESC, last_seen DESC"
+        }
+
+        val result = ArrayList<HistoryEntry>()
+        dbHelper.readableDatabase.query(
+            TABLE,
+            null,
+            "last_seen >= ?",
+            arrayOf(since.toString()),
+            null,
+            null,
+            orderBy,
+            limit.coerceIn(1, 50).toString()
         ).use {
             while (it.moveToNext()) result += row(it)
         }
