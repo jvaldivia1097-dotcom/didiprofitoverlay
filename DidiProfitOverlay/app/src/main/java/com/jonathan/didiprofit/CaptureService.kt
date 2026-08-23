@@ -28,6 +28,7 @@ import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 
 class CaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
@@ -49,7 +50,7 @@ class CaptureService : Service() {
     private var lastFrameAt = 0L
     private var lastOfferAt = 0L
     private var lastSignature = ""
-    private var lastOverlayRaiseAt = 0L
+    private var lastFrontedOffer: RideOffer? = null
 
     private val pendingLock = Any()
     private var pendingImage: Image? = null
@@ -483,6 +484,7 @@ class CaptureService : Service() {
         if (OfferParser.isOfferInactive(lines)) {
             lastOfferAt = 0L
             lastSignature = ""
+            lastFrontedOffer = null
             frameAccumulator.clear()
 
             postOverlay {
@@ -490,19 +492,6 @@ class CaptureService : Service() {
             }
 
             return true
-        }
-
-        val looksLikeOffer =
-            OfferParser.looksLikeOffer(lines)
-
-        if (looksLikeOffer &&
-            now - lastOverlayRaiseAt >= OVERLAY_RAISE_INTERVAL_MS
-        ) {
-            lastOverlayRaiseAt = now
-
-            postOverlay {
-                overlay.bringToFront()
-            }
         }
 
         val mergedLines =
@@ -547,19 +536,26 @@ class CaptureService : Service() {
                 }
             }
 
-            if (now - lastOverlayRaiseAt >= 180L) {
-                lastOverlayRaiseAt = now
+            val needsOneTimeRaise =
+                lastFrontedOffer?.let { old ->
+                    !sameProposalForOverlay(old, parsedOffer)
+                } ?: true
 
+            if (needsOneTimeRaise) {
+                lastFrontedOffer = parsedOffer
                 postOverlay {
+                    // Update first, then reinsert only once for this proposal.
+                    // OverlayController will refuse to do this during a drag gesture.
+                    overlay.showOffer(parsedOffer, thresholds)
                     overlay.bringToFront()
                 }
-            }
-
-            postOverlay {
-                overlay.showOffer(
-                    parsedOffer,
-                    thresholds
-                )
+            } else {
+                postOverlay {
+                    overlay.showOffer(
+                        parsedOffer,
+                        thresholds
+                    )
+                }
             }
 
             return true
@@ -577,6 +573,16 @@ class CaptureService : Service() {
 
         return false
     }
+
+    private fun sameProposalForOverlay(
+        old: RideOffer,
+        new: RideOffer
+    ): Boolean =
+        abs(old.fare - new.fare) <= 0.02 &&
+            abs(old.pickup.minutes - new.pickup.minutes) <= 1 &&
+            abs(old.trip.minutes - new.trip.minutes) <= 1 &&
+            abs(old.pickup.kilometers - new.pickup.kilometers) <= 0.60 &&
+            abs(old.trip.kilometers - new.trip.kilometers) <= 0.25
 
     private fun finishOcr() {
         ocrBusy.set(false)
@@ -853,9 +859,6 @@ class CaptureService : Service() {
 
         private const val WAITING_RESET_MS =
             3500L
-
-        private const val OVERLAY_RAISE_INTERVAL_MS =
-            650L
 
         private const val PRIMARY_REGION_TOP_RATIO =
             0.25

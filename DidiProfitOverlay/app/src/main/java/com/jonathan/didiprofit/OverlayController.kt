@@ -30,6 +30,7 @@ class OverlayController(
     private var suggestionsView: TextView? = null
     private var stopTarget: TextView? = null
     private var insideStopZone = false
+    @Volatile private var draggingNow = false
 
     private val density get() = context.resources.displayMetrics.density
     private fun dp(v: Int) = (v * density).toInt()
@@ -88,6 +89,10 @@ class OverlayController(
     }
 
     fun bringToFront() {
+        // Never detach/re-add the window while the user is touching it.
+        // Doing so cancels the active MotionEvent gesture and freezes the drag/X UI.
+        if (draggingNow || stopTarget != null) return
+
         val view = root ?: return
         val lp = rootLayoutParams ?: return
 
@@ -120,6 +125,7 @@ class OverlayController(
             runCatching { windowManager.removeViewImmediate(view) }
             clearRegisteredOverlay(view)
         }
+        draggingNow = false
         root = null
         rootLayoutParams = null
         hourlyView = null
@@ -248,6 +254,7 @@ class OverlayController(
                         hypot(dx.toDouble(), dy.toDouble()) >= dragThreshold
                     ) {
                         dragging = true
+                        draggingNow = true
                         showStopTarget()
                     }
 
@@ -274,6 +281,7 @@ class OverlayController(
 
                     hideStopTarget()
                     dragging = false
+                    draggingNow = false
                     insideStopZone = false
 
                     if (shouldStop) {
@@ -289,6 +297,7 @@ class OverlayController(
                 MotionEvent.ACTION_CANCEL -> {
                     hideStopTarget()
                     dragging = false
+                    draggingNow = false
                     insideStopZone = false
                     true
                 }
