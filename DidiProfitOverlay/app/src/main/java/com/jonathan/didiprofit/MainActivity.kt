@@ -158,7 +158,7 @@ class MainActivity : Activity() {
         content.addView(
             TextView(this).apply {
                 text =
-                    "V3.3.1 · Rentabilidad + historial + estadísticas + Pon Tu Precio."
+                    "V3.3.2 · Rentabilidad + historial + estadísticas + Pon Tu Precio."
 
                 textSize =
                     15f

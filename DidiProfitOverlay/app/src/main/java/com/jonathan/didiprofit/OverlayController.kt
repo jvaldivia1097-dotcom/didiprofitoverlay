@@ -21,7 +21,6 @@ class OverlayController(
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var root: LinearLayout? = null
-    private var rootLayoutParams: WindowManager.LayoutParams? = null
     private var hourlyView: TextView? = null
     private var kmView: TextView? = null
     private var detailsView: TextView? = null
@@ -30,7 +29,6 @@ class OverlayController(
     private var suggestionsView: TextView? = null
     private var stopTarget: TextView? = null
     private var insideStopZone = false
-    @Volatile private var draggingNow = false
 
     private val density get() = context.resources.displayMetrics.density
     private fun dp(v: Int) = (v * density).toInt()
@@ -88,36 +86,6 @@ class OverlayController(
         ).joinToString("\n")
     }
 
-    fun bringToFront() {
-        // Never detach/re-add the window while the user is touching it.
-        // Doing so cancels the active MotionEvent gesture and freezes the drag/X UI.
-        if (draggingNow || stopTarget != null) return
-
-        val view = root ?: return
-        val lp = rootLayoutParams ?: return
-
-        val removed = runCatching {
-            windowManager.removeViewImmediate(view)
-        }.isSuccess
-
-        if (!removed) return
-
-        runCatching {
-            windowManager.addView(view, lp)
-            registerOverlay(windowManager, view)
-        }.onFailure {
-            clearRegisteredOverlay(view)
-            root = null
-            rootLayoutParams = null
-            hourlyView = null
-            kmView = null
-            detailsView = null
-            scoreView = null
-            suggestionsTitleView = null
-            suggestionsView = null
-        }
-    }
-
     fun remove() {
         hideStopTarget()
         val view = root
@@ -125,9 +93,7 @@ class OverlayController(
             runCatching { windowManager.removeViewImmediate(view) }
             clearRegisteredOverlay(view)
         }
-        draggingNow = false
         root = null
-        rootLayoutParams = null
         hourlyView = null
         kmView = null
         detailsView = null
@@ -205,7 +171,6 @@ class OverlayController(
             y = dp(150)
         }
 
-        rootLayoutParams = lp
         makeDraggable(container, lp)
         windowManager.addView(container, lp)
         root = container
@@ -254,7 +219,6 @@ class OverlayController(
                         hypot(dx.toDouble(), dy.toDouble()) >= dragThreshold
                     ) {
                         dragging = true
-                        draggingNow = true
                         showStopTarget()
                     }
 
@@ -281,8 +245,7 @@ class OverlayController(
 
                     hideStopTarget()
                     dragging = false
-                    draggingNow = false
-                    insideStopZone = false
+                                insideStopZone = false
 
                     if (shouldStop) {
                         view.visibility = View.GONE
@@ -297,8 +260,7 @@ class OverlayController(
                 MotionEvent.ACTION_CANCEL -> {
                     hideStopTarget()
                     dragging = false
-                    draggingNow = false
-                    insideStopZone = false
+                                insideStopZone = false
                     true
                 }
 

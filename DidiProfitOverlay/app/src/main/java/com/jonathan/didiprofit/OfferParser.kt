@@ -1,19 +1,29 @@
 package com.jonathan.didiprofit
 
 import java.text.Normalizer
-import kotlin.math.abs
 import kotlin.math.max
 
+/**
+ * Parser tuned for the current DiDi Conductor offer layouts used in Mexico.
+ *
+ * V3.1:
+ * - ignores overlay-generated route-summary lines
+ * - tolerates OCR losing/misreading the "$" symbol on the main fare
+ * - keeps secondary monetary rows ("adicionales", "tarifa base dinámica", etc.) out
+ * - preserves geometry-aware grouping for carousel and full-screen offers
+ */
 object OfferParser {
     private val strictFareRegex = Regex("""(?:\$|＄|S)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)""")
     private val looseFareRegex = Regex("""(?<!\d)([0-9]{2,4}[.,][0-9]{2})(?!\d)""")
 
+    /**
+     * Supports:
+     * - Carousel: "(5 min 648 m)" / "(17 min 6.8 km)"
+     * - Full-screen: "6min (2.7km)" / "15min (6.9km)"
+     * - OCR variants with optional parentheses/spaces.
+     */
     private val routeRegex = Regex(
-        """(?i)([0-9]{1,3})\s*(?:min|minuto|minutos)\s*(?:\(\s*)?([0-9]+(?:[.,][0-9]+)?)\s*(km|m)\b\s*\)?"""
-    )
-    private val timeOnlyRegex = Regex("""(?i)([0-9]{1,3})\s*(?:min|minuto|minutos)\b""")
-    private val distanceOnlyRegex = Regex(
-        """(?i)\(?\s*([0-9]+(?:[.,][0-9]+)?)\s*(km|m)\b\s*\)?"""
+        """(?i)([0-9]{1,3})\s*(?:min|minuto|minutos)\s*(?:\(\s*)?([0-9]+(?:[.,][0-9]+)?)\s*(km|m)\s*\)?"""
     )
 
     private val inactiveMarkers = listOf(
@@ -36,51 +46,44 @@ object OfferParser {
         "tomar viaje"
     )
 
-    private val offerMarkers = listOf(
-        "pon tu precio",
-        "rechazo permitido",
-        "punto(s)",
-        "perfil avanzado",
-        "identificacion verificada",
-        "tarjeta bancaria verificada",
-        "al precio de express"
-    )
-
     fun isOfferInactive(lines: List<OcrLine>): Boolean {
         if (lines.isEmpty()) return false
         val folded = fold(lines.joinToString(" ") { it.text })
         return inactiveMarkers.any { folded.contains(it) }
     }
 
-    fun looksLikeOffer(lines: List<OcrLine>): Boolean {
-        if (lines.isEmpty()) return false
-        val expanded = prepareLines(lines)
-        val joined = fold(expanded.joinToString(" ") { it.text })
-        if (offerMarkers.any { joined.contains(it) }) return true
-
-        val fares = fareCandidates(expanded, strict = true)
-        val metrics = routeMetrics(expanded)
-        return (fares.isNotEmpty() && metrics.isNotEmpty()) || metrics.size >= 2
-    }
-
-    fun mainFareHint(lines: List<OcrLine>): Double? {
-        if (lines.isEmpty()) return null
-        val expanded = prepareLines(lines)
-        chooseLikelyMainFare(fareCandidates(expanded, strict = true))?.let { return it.value }
-        return chooseLikelyMainFare(fareCandidates(expanded, strict = false))?.value
-    }
-
     fun parse(lines: List<OcrLine>): RideOffer? {
         if (lines.isEmpty() || isOfferInactive(lines)) return null
 
-        val cleaned = prepareLines(lines)
-        val metrics = routeMetrics(cleaned)
+        val cleaned = lines.map { it.copy(text = normalize(it.text)) }
+
+        // Important V3.1 fix: never use route totals printed by our own overlay
+        // as pickup/trip rows for the next DiDi proposal.
+        val metrics = cleaned.mapNotNull { line ->
+            if (isOverlayLine(line.text) || isSecondaryFareLine(line.text)) {
+                null
+            } else {
+                parseRouteMetric(line.text)?.let { line to it }
+            }
+        }.sortedBy { it.first.centerY }
+
         if (metrics.size < 2) {
             return parseSimpleText(cleaned.joinToString("\n") { it.text })
         }
 
-        parseWithCandidates(fareCandidates(cleaned, strict = true), metrics)?.let { return it }
-        parseWithCandidates(fareCandidates(cleaned, strict = false), metrics)?.let { return it }
+        val strictFares = cleaned.mapNotNull { line ->
+            fareCandidate(line, strict = true)
+        }
+
+        parseWithCandidates(strictFares, metrics)?.let { return it }
+
+        // If ML Kit dropped the "$" symbol (common on large white fare text),
+        // try a conservative geometry/size-based numeric fare candidate.
+        val looseFares = cleaned.mapNotNull { line ->
+            fareCandidate(line, strict = false)
+        }
+
+        parseWithCandidates(looseFares, metrics)?.let { return it }
 
         return parseSimpleText(cleaned.joinToString("\n") { it.text })
     }
@@ -106,151 +109,6 @@ object OfferParser {
         val pickup = metricFromMatch(metricMatches[0]) ?: return null
         val trip = metricFromMatch(metricMatches[1]) ?: return null
         return RideOffer(fare, pickup, trip)
-    }
-
-    private fun prepareLines(lines: List<OcrLine>): List<OcrLine> {
-        val normalized = lines.map { it.copy(text = normalize(it.text)) }
-        if (normalized.size < 2) return normalized
-
-        data class Row(val items: MutableList<OcrLine> = mutableListOf())
-
-        val rows = mutableListOf<Row>()
-        normalized.sortedBy { it.centerY }.forEach { line ->
-            val target = rows.lastOrNull()?.takeIf { row ->
-                val avgY = row.items.map { it.centerY }.average()
-                val maxHeight = max(
-                    line.height,
-                    row.items.maxOfOrNull { it.height } ?: line.height
-                )
-                abs(line.centerY - avgY) <= max(12.0, maxHeight * 0.72)
-            }
-
-            if (target != null) {
-                target.items += line
-            } else {
-                rows += Row(mutableListOf(line))
-            }
-        }
-
-        val synthetic = rows.mapNotNull { row ->
-            if (row.items.size < 2) return@mapNotNull null
-
-            val ordered = row.items.sortedWith(
-                compareBy<OcrLine> {
-                    when {
-                        it.left != 0 -> it.left
-                        it.centerX != 0 -> it.centerX
-                        else -> Int.MAX_VALUE
-                    }
-                }.thenBy { it.centerY }
-            )
-
-            val text = ordered.joinToString(" ") { it.text }.trim()
-            if (text.isBlank()) return@mapNotNull null
-
-            OcrLine(
-                text = text,
-                centerY = ordered.map { it.centerY }.average().toInt(),
-                height = ordered.maxOfOrNull { it.height } ?: 0,
-                centerX = ordered.map { it.centerX }.filter { it != 0 }
-                    .takeIf { it.isNotEmpty() }?.average()?.toInt() ?: 0,
-                left = ordered.map { it.left }.filter { it != 0 }.minOrNull() ?: 0,
-                right = ordered.map { it.right }.filter { it != 0 }.maxOrNull() ?: 0
-            )
-        }
-
-        return (normalized + synthetic)
-            .distinctBy { "${fold(it.text)}|${it.centerY / 6}|${it.left / 8}|${it.right / 8}" }
-            .sortedBy { it.centerY }
-    }
-
-    private fun routeMetrics(lines: List<OcrLine>): List<Pair<OcrLine, RouteMetric>> {
-        val usable = lines.filterNot { isOverlayLine(it.text) || isSecondaryFareLine(it.text) }
-
-        val direct = usable.mapNotNull { line ->
-            parseRouteMetric(line.text)?.let { line to it }
-        }.toMutableList()
-
-        val fragments = mutableListOf<Pair<OcrLine, RouteMetric>>()
-
-        usable.forEach { timeLine ->
-            if (parseRouteMetric(timeLine.text) != null) return@forEach
-            val timeMatch = timeOnlyRegex.find(timeLine.text) ?: return@forEach
-            val minutes = timeMatch.groupValues[1].toIntOrNull() ?: return@forEach
-
-            val candidate = usable
-                .asSequence()
-                .filter { it !== timeLine }
-                .filter { parseRouteMetric(it.text) == null }
-                .mapNotNull { distanceLine ->
-                    val distanceMatch = distanceOnlyRegex.find(distanceLine.text)
-                        ?: return@mapNotNull null
-
-                    val yTolerance = max(
-                        18.0,
-                        max(timeLine.height, distanceLine.height) * 1.25
-                    )
-                    val yGap = abs(timeLine.centerY - distanceLine.centerY).toDouble()
-                    if (yGap > yTolerance) return@mapNotNull null
-
-                    if (timeLine.right != 0 && distanceLine.left != 0 &&
-                        distanceLine.right < timeLine.left
-                    ) {
-                        return@mapNotNull null
-                    }
-
-                    val distanceValue = distanceMatch.groupValues[1]
-                        .replace(',', '.')
-                        .toDoubleOrNull()
-                        ?: return@mapNotNull null
-
-                    val km = if (distanceMatch.groupValues[2].equals("m", true)) {
-                        distanceValue / 1000.0
-                    } else {
-                        distanceValue
-                    }
-                    if (km < 0.0) return@mapNotNull null
-
-                    Triple(distanceLine, RouteMetric(minutes, km), yGap)
-                }
-                .minByOrNull { it.third }
-                ?: return@forEach
-
-            val distanceLine = candidate.first
-            val metric = candidate.second
-            val synthetic = OcrLine(
-                text = "${timeLine.text} ${distanceLine.text}",
-                centerY = (timeLine.centerY + distanceLine.centerY) / 2,
-                height = max(timeLine.height, distanceLine.height),
-                centerX = if (timeLine.centerX != 0 && distanceLine.centerX != 0) {
-                    (timeLine.centerX + distanceLine.centerX) / 2
-                } else 0,
-                left = listOf(timeLine.left, distanceLine.left).filter { it != 0 }.minOrNull() ?: 0,
-                right = listOf(timeLine.right, distanceLine.right).filter { it != 0 }.maxOrNull() ?: 0
-            )
-            fragments += synthetic to metric
-        }
-
-        return (direct + fragments)
-            .distinctBy { (line, metric) ->
-                "${metric.minutes}|${"%.3f".format(metric.kilometers)}|${line.centerY / 8}"
-            }
-            .sortedBy { it.first.centerY }
-    }
-
-    private fun fareCandidates(lines: List<OcrLine>, strict: Boolean): List<FareCandidate> =
-        lines.mapNotNull { fareCandidate(it, strict) }
-
-    private fun chooseLikelyMainFare(inputFares: List<FareCandidate>): FareCandidate? {
-        if (inputFares.isEmpty()) return null
-        val maxHeight = inputFares.maxOfOrNull { it.height } ?: 0
-        val likely = if (maxHeight > 0) {
-            inputFares.filter { it.height >= max(1, (maxHeight * 0.68).toInt()) }
-        } else inputFares
-
-        return likely.ifEmpty { inputFares }
-            .sortedWith(compareByDescending<FareCandidate> { it.height }.thenBy { it.y })
-            .firstOrNull()
     }
 
     private fun parseWithCandidates(
