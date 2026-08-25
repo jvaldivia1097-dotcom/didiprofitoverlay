@@ -11,34 +11,44 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.util.Calendar
+import java.util.Locale
 
 class MainActivity : Activity() {
-    private lateinit var status: TextView
-    private lateinit var resumeButton: Button
-    private lateinit var hourlyExcellent: EditText
-    private lateinit var hourlyGood: EditText
-    private lateinit var kmExcellent: EditText
-    private lateinit var kmGood: EditText
-    private lateinit var targetHourly1: EditText
-    private lateinit var targetHourly2: EditText
-    private lateinit var targetHourly3: EditText
     private lateinit var preferences: ProfitPreferences
+    private lateinit var history: HistoryRepository
+
+    private lateinit var statusCard: LinearLayout
+    private lateinit var statusTitle: TextView
+    private lateinit var statusBody: TextView
+    private lateinit var resumeButton: Button
+
+    private lateinit var todayHourly: TextView
+    private lateinit var todayKm: TextView
+    private lateinit var todayScore: TextView
+    private lateinit var todayCount: TextView
 
     private var handledResumeIntent = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         preferences = ProfitPreferences(this)
+        history = HistoryRepository(this)
+
+        window.statusBarColor = Color.WHITE
+        window.navigationBarColor = Color.WHITE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
+
         setContentView(buildUi())
         requestNotificationPermissionIfNeeded()
         handleResumeIntentIfNeeded(intent)
@@ -54,6 +64,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         updateStatus()
+        updateDashboard()
     }
 
     @Suppress("DEPRECATION")
@@ -62,41 +73,22 @@ class MainActivity : Activity() {
         resultCode: Int,
         data: Intent?
     ) {
-        super.onActivityResult(
-            requestCode,
-            resultCode,
-            data
-        )
+        super.onActivityResult(requestCode, resultCode, data)
 
         if (
             requestCode == REQUEST_CAPTURE &&
             resultCode == RESULT_OK &&
             data != null
         ) {
-            saveSettings(showToast = false)
-
             OverlayController.removeAnyOverlay(this)
             AnalysisResumeState.clear(this)
 
-            val service =
-                Intent(
-                    this,
-                    CaptureService::class.java
-                ).apply {
-                    putExtra(
-                        CaptureService.EXTRA_RESULT_CODE,
-                        resultCode
-                    )
-                    putExtra(
-                        CaptureService.EXTRA_RESULT_DATA,
-                        data
-                    )
-                }
+            val service = Intent(this, CaptureService::class.java).apply {
+                putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
+                putExtra(CaptureService.EXTRA_RESULT_DATA, data)
+            }
 
-            if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.O
-            ) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(service)
             } else {
                 startService(service)
@@ -112,479 +104,453 @@ class MainActivity : Activity() {
         updateStatus()
     }
 
-    private fun buildUi(): ScrollView {
-        val d =
-            resources.displayMetrics.density
+    private fun buildUi(): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(AppUi.BG)
+        }
 
-        fun dp(v: Int) =
-            (v * d).toInt()
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+        }
 
-        val content =
-            LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.VERTICAL
-
-                setPadding(
-                    dp(20),
-                    dp(24),
-                    dp(20),
-                    dp(32)
-                )
-            }
-
-        content.addView(
-            TextView(this).apply {
-                text =
-                    "DiDi Rentabilidad"
-
-                textSize =
-                    28f
-
-                setTextColor(
-                    Color.rgb(
-                        25,
-                        25,
-                        25
-                    )
-                )
-
-                setTypeface(
-                    typeface,
-                    android.graphics.Typeface.BOLD
-                )
-            }
-        )
-
-        content.addView(
-            TextView(this).apply {
-                text =
-                    "V3.3.2 · Rentabilidad + historial + estadísticas + Pon Tu Precio."
-
-                textSize =
-                    15f
-
-                setTextColor(
-                    Color.DKGRAY
-                )
-
-                setPadding(
-                    0,
-                    dp(6),
-                    0,
-                    dp(18)
-                )
-            }
-        )
-
-        status =
-            TextView(this).apply {
-                textSize =
-                    15f
-
-                setPadding(
-                    dp(12),
-                    dp(12),
-                    dp(12),
-                    dp(12)
-                )
-
-                setBackgroundColor(
-                    Color.rgb(
-                        242,
-                        242,
-                        242
-                    )
-                )
-            }
-
-        content.addView(
-            status,
-            matchWidth()
-        )
-
-        content.addView(
-            spacer(
-                dp(16)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                AppUi.dp(this@MainActivity, 18),
+                AppUi.dp(this@MainActivity, 18),
+                AppUi.dp(this@MainActivity, 18),
+                AppUi.dp(this@MainActivity, 28)
             )
-        )
+        }
 
-        content.addView(
-            Button(this).apply {
-                text =
-                    "1. Permitir superposición"
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
 
-                setOnClickListener {
-                    openOverlayPermission()
-                }
-            },
-            matchWidth()
-        )
-
-        content.addView(
-            Button(this).apply {
-                text =
-                    "2. Iniciar análisis"
-
-                setOnClickListener {
-                    startAnalysisFlow()
-                }
-            },
-            matchWidth()
-        )
-
-        resumeButton =
-            Button(this).apply {
-                text =
-                    "Reanudar análisis"
-
-                visibility =
-                    View.GONE
-
-                setOnClickListener {
-                    startAnalysisFlow()
-                }
+        val headerText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        headerText.addView(AppUi.title(this, "DiDi Rentabilidad", 27f))
+        headerText.addView(
+            AppUi.body(
+                this,
+                "V3.4 · Análisis, historial y Pon Tu Precio",
+                12.5f
+            ).apply {
+                setPadding(0, AppUi.dp(this@MainActivity, 3), 0, 0)
             }
+        )
+        header.addView(
+            headerText,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
 
+        val settingsShortcut = TextView(this).apply {
+            text = "⚙"
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(AppUi.TEXT)
+            background = AppUi.rounded(
+                this@MainActivity,
+                Color.WHITE,
+                16,
+                AppUi.BORDER
+            )
+            setPadding(
+                AppUi.dp(this@MainActivity, 11),
+                AppUi.dp(this@MainActivity, 8),
+                AppUi.dp(this@MainActivity, 11),
+                AppUi.dp(this@MainActivity, 8)
+            )
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+            }
+        }
+        header.addView(settingsShortcut)
+        content.addView(header)
+
+        statusCard = AppUi.card(this, AppUi.GREEN_TINT, 14).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val statusIcon = TextView(this).apply {
+            text = "✓"
+            textSize = 19f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = AppUi.rounded(
+                this@MainActivity,
+                AppUi.GREEN,
+                99
+            )
+            setPadding(
+                AppUi.dp(this@MainActivity, 7),
+                AppUi.dp(this@MainActivity, 3),
+                AppUi.dp(this@MainActivity, 7),
+                AppUi.dp(this@MainActivity, 3)
+            )
+        }
+        statusCard.addView(statusIcon)
+
+        val statusTexts = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(AppUi.dp(this@MainActivity, 12), 0, 0, 0)
+        }
+        statusTitle = AppUi.title(this, "Superposición permitida", 16f)
+        statusBody = AppUi.body(this, "Todo listo para analizar", 12.5f)
+        statusTexts.addView(statusTitle)
+        statusTexts.addView(statusBody)
+        statusCard.addView(
+            statusTexts,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        content.addView(
+            statusCard,
+            AppUi.fullWidth(this, 16, 0)
+        )
+
+        content.addView(AppUi.sectionTitle(this, "Resumen de hoy"))
+
+        val summaryCard = AppUi.card(this)
+        val summaryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        fun liveMetric(): Pair<LinearLayout, TextView> {
+            val valueView = TextView(this).apply {
+                text = "—"
+                textSize = 20f
+                gravity = Gravity.CENTER
+                setTextColor(AppUi.TEXT)
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(
+                    AppUi.dp(this@MainActivity, 5),
+                    AppUi.dp(this@MainActivity, 11),
+                    AppUi.dp(this@MainActivity, 5),
+                    AppUi.dp(this@MainActivity, 11)
+                )
+                background = AppUi.rounded(
+                    this@MainActivity,
+                    Color.rgb(250, 250, 251),
+                    14,
+                    AppUi.BORDER
+                )
+                addView(valueView)
+            }
+            return tile to valueView
+        }
+
+        val (hourTile, hourView) = liveMetric()
+        todayHourly = hourView
+        hourTile.addView(AppUi.body(this, "Promedio $/h", 11f).apply {
+            gravity = Gravity.CENTER
+        })
+
+        val (kmTile, kmView) = liveMetric()
+        todayKm = kmView
+        kmTile.addView(AppUi.body(this, "Promedio $/km", 11f).apply {
+            gravity = Gravity.CENTER
+        })
+
+        val (scoreTile, scoreView) = liveMetric()
+        todayScore = scoreView
+        scoreTile.addView(AppUi.body(this, "Puntaje", 11f).apply {
+            gravity = Gravity.CENTER
+        })
+
+        listOf(hourTile, kmTile, scoreTile).forEach { tile ->
+            summaryRow.addView(
+                tile,
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    setMargins(
+                        AppUi.dp(this@MainActivity, 3),
+                        0,
+                        AppUi.dp(this@MainActivity, 3),
+                        0
+                    )
+                }
+            )
+        }
+        summaryCard.addView(summaryRow)
+
+        todayCount = AppUi.body(this, "Sin propuestas hoy", 12.5f).apply {
+            setPadding(
+                AppUi.dp(this@MainActivity, 4),
+                AppUi.dp(this@MainActivity, 11),
+                AppUi.dp(this@MainActivity, 4),
+                0
+            )
+        }
+        summaryCard.addView(todayCount)
+        content.addView(summaryCard)
+
+        content.addView(AppUi.sectionTitle(this, "Análisis"))
+
+        content.addView(
+            AppUi.primaryButton(this, "▶  Iniciar análisis") {
+                startAnalysisFlow()
+            },
+            AppUi.fullWidth(this, 0, 9)
+        )
+
+        resumeButton = AppUi.secondaryButton(this, "↻  Reanudar análisis") {
+            startAnalysisFlow()
+        }.apply {
+            visibility = View.GONE
+        }
         content.addView(
             resumeButton,
-            matchWidth()
+            AppUi.fullWidth(this, 0, 9)
         )
 
         content.addView(
-            Button(this).apply {
-                text =
-                    "Detener análisis"
-
-                setOnClickListener {
-                    AnalysisResumeState.clear(
-                        this@MainActivity
-                    )
-
-                    OverlayController.removeAnyOverlay(
-                        this@MainActivity
-                    )
-
-                    stopService(
-                        Intent(
-                            this@MainActivity,
-                            CaptureService::class.java
-                        )
-                    )
-
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Análisis detenido",
-                        Toast.LENGTH_SHORT
-                    ).show()
-
-                    updateStatus()
-                }
+            AppUi.secondaryButton(this, "▣  Permitir superposición") {
+                openOverlayPermission()
             },
-            matchWidth()
+            AppUi.fullWidth(this, 0, 9)
         )
 
         content.addView(
-            Button(this).apply {
-                text =
-                    "Historial y estadísticas"
-
-                setOnClickListener {
-                    startActivity(
-                        Intent(
-                            this@MainActivity,
-                            HistoryActivity::class.java
-                        )
-                    )
-                }
+            AppUi.secondaryButton(this, "■  Detener análisis") {
+                stopAnalysis()
             },
-            matchWidth()
-        )
-
-        val t =
-            preferences.load()
-
-        content.addView(
-            sectionTitle(
-                "Semáforo",
-                dp(22),
-                dp(8)
-            )
+            AppUi.fullWidth(this, 0, 9)
         )
 
         content.addView(
-            TextView(this).apply {
-                text =
-                    "Verde si alcanza 'excelente', amarillo desde 'bueno' y rojo debajo de ese nivel."
+            AppUi.secondaryButton(this, "▥  Historial y estadísticas") {
+                startActivity(Intent(this, HistoryActivity::class.java))
+            },
+            AppUi.fullWidth(this, 0, 0)
+        )
 
-                setTextColor(
-                    Color.DKGRAY
-                )
+        val t = preferences.load()
+        content.addView(AppUi.sectionTitle(this, "Tu estrategia"))
+
+        val strategyCard = AppUi.card(this)
+        strategyCard.addView(
+            AppUi.title(this, "Semáforo de rentabilidad", 16f)
+        )
+        strategyCard.addView(
+            AppUi.body(
+                this,
+                String.format(
+                    Locale.US,
+                    "Excelente: $%.0f/h y $%.2f/km   ·   Bueno: $%.0f/h y $%.2f/km",
+                    t.hourlyExcellent,
+                    t.kmExcellent,
+                    t.hourlyGood,
+                    t.kmGood
+                ),
+                13f
+            ).apply {
+                setPadding(0, AppUi.dp(this@MainActivity, 5), 0, AppUi.dp(this@MainActivity, 12))
             }
         )
 
-        hourlyExcellent =
-            numberField(
-                "$/hora excelente",
-                t.hourlyExcellent
+        val dots = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        listOf(
+            "Excelente" to AppUi.GREEN,
+            "Bueno" to AppUi.AMBER,
+            "Baja" to AppUi.RED
+        ).forEach { (label, color) ->
+            dots.addView(
+                TextView(this).apply {
+                    text = "● $label"
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setTextColor(color)
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             )
+        }
+        strategyCard.addView(dots)
 
-        hourlyGood =
-            numberField(
-                "$/hora bueno",
-                t.hourlyGood
-            )
-
-        kmExcellent =
-            numberField(
-                "$/km excelente",
-                t.kmExcellent
-            )
-
-        kmGood =
-            numberField(
-                "$/km bueno",
-                t.kmGood
-            )
-
-        content.addView(
-            hourlyExcellent,
-            matchWidth()
-        )
-
-        content.addView(
-            hourlyGood,
-            matchWidth()
-        )
-
-        content.addView(
-            kmExcellent,
-            matchWidth()
-        )
-
-        content.addView(
-            kmGood,
-            matchWidth()
-        )
-
-        content.addView(
-            sectionTitle(
-                "Sugerencias Pon Tu Precio",
-                dp(22),
-                dp(8)
-            )
-        )
-
-        content.addView(
-            TextView(this).apply {
-                text =
-                    "Elige tres objetivos de ingreso por hora. El panel calculará la tarifa mínima necesaria considerando recogida + viaje."
-
-                setTextColor(
-                    Color.DKGRAY
-                )
+        strategyCard.addView(
+            AppUi.body(
+                this,
+                String.format(
+                    Locale.US,
+                    "Pon Tu Precio: %.0f / %.0f / %.0f $/hora",
+                    t.targetHourly1,
+                    t.targetHourly2,
+                    t.targetHourly3
+                ),
+                13f,
+                AppUi.TEXT
+            ).apply {
+                setPadding(0, AppUi.dp(this@MainActivity, 14), 0, 0)
             }
         )
 
-        targetHourly1 =
-            numberField(
-                "Objetivo 1 ($/hora)",
-                t.targetHourly1
-            )
+        strategyCard.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        content.addView(strategyCard)
 
-        targetHourly2 =
-            numberField(
-                "Objetivo 2 ($/hora)",
-                t.targetHourly2
-            )
-
-        targetHourly3 =
-            numberField(
-                "Objetivo 3 ($/hora)",
-                t.targetHourly3
-            )
-
-        content.addView(
-            targetHourly1,
-            matchWidth()
-        )
-
-        content.addView(
-            targetHourly2,
-            matchWidth()
-        )
-
-        content.addView(
-            targetHourly3,
-            matchWidth()
-        )
-
-        content.addView(
-            Button(this).apply {
-                text =
-                    "Guardar configuración"
-
-                setOnClickListener {
-                    saveSettings(true)
-                }
-            },
-            matchWidth()
-        )
-
-        content.addView(
-            TextView(this).apply {
-                text =
-                    "Cómo usarla\n\n" +
-                    "1. Da permiso de superposición.\n" +
-                    "2. Pulsa Iniciar análisis y acepta la captura.\n" +
-                    "3. Abre DiDi Conductor.\n" +
-                    "4. El panel muestra $/h, $/km, puntaje y Pon Tu Precio.\n" +
-                    "5. Para detener rápidamente, arrastra el panel hacia la X inferior derecha.\n" +
-                    "6. Si Android detiene la captura al bloquear la pantalla, usa la notificación o el botón Reanudar análisis y vuelve a autorizar la captura.\n" +
-                    "7. Historial y estadísticas guarda propuestas únicas y fusiona duplicados recientes."
-
-                textSize =
-                    14f
-
-                setTextColor(
-                    Color.DKGRAY
-                )
-
-                setPadding(
-                    0,
-                    dp(22),
-                    0,
-                    0
-                )
+        val note = AppUi.card(this, AppUi.ORANGE_TINT, 14)
+        note.addView(AppUi.title(this, "Consejo", 15f))
+        note.addView(
+            AppUi.body(
+                this,
+                "Usa Ajustes para cambiar los umbrales y objetivos. El motor de análisis de V3.3.2 se conserva sin cambios.",
+                12.5f
+            ).apply {
+                setPadding(0, AppUi.dp(this@MainActivity, 4), 0, 0)
             }
         )
+        content.addView(note, AppUi.fullWidth(this, 14, 0))
 
-        return ScrollView(this).apply {
-            addView(content)
+        scroll.addView(content)
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        root.addView(AppUi.bottomNav(this, AppSection.HOME))
+        return root
+    }
+
+    private fun updateDashboard() {
+        val stats = history.statsSince(startOfToday())
+
+        if (stats.count <= 0) {
+            todayHourly.text = "—"
+            todayKm.text = "—"
+            todayScore.text = "—"
+            todayScore.setTextColor(AppUi.TEXT)
+            todayCount.text = "Sin propuestas hoy"
+            return
+        }
+
+        todayHourly.text = String.format(Locale.US, "$%.0f", stats.avgHourly)
+        todayKm.text = String.format(Locale.US, "$%.2f", stats.avgKm)
+        todayScore.text = String.format(Locale.US, "%.0f/100", stats.avgScore)
+        todayScore.setTextColor(
+            AppUi.scoreColor(stats.avgScore.toInt())
+        )
+        todayCount.text = String.format(
+            Locale.US,
+            "%d propuestas únicas · Mejor $%.0f/h · $%.2f/km",
+            stats.count,
+            stats.bestHourly,
+            stats.bestKm
+        )
+    }
+
+    private fun updateStatus() {
+        val pending = AnalysisResumeState.isPending(this)
+        resumeButton.visibility = if (pending) View.VISIBLE else View.GONE
+
+        when {
+            pending -> {
+                statusCard.background = AppUi.rounded(
+                    this,
+                    AppUi.ORANGE_TINT,
+                    18,
+                    AppUi.ORANGE
+                )
+                statusTitle.text = "Análisis pausado"
+                statusTitle.setTextColor(AppUi.ORANGE_DARK)
+                statusBody.text =
+                    if (AnalysisResumeState.reason(this) ==
+                        AnalysisResumeState.REASON_SCREEN_LOCK
+                    ) {
+                        "Android pausó la captura al bloquear la pantalla. Toca Reanudar análisis."
+                    } else {
+                        "La captura se detuvo. Toca Reanudar análisis."
+                    }
+            }
+
+            Settings.canDrawOverlays(this) -> {
+                statusCard.background = AppUi.rounded(
+                    this,
+                    AppUi.GREEN_TINT,
+                    18,
+                    AppUi.GREEN
+                )
+                statusTitle.text = "Superposición permitida"
+                statusTitle.setTextColor(AppUi.GREEN)
+                statusBody.text = "Todo listo para analizar propuestas"
+            }
+
+            else -> {
+                statusCard.background = AppUi.rounded(
+                    this,
+                    Color.WHITE,
+                    18,
+                    AppUi.BORDER
+                )
+                statusTitle.text = "Falta permiso de superposición"
+                statusTitle.setTextColor(AppUi.TEXT)
+                statusBody.text = "Autorízalo una sola vez antes de iniciar el análisis"
+            }
         }
     }
 
-    private fun handleResumeIntentIfNeeded(
-        intent: Intent?
-    ) {
-        if (handledResumeIntent) return
+    private fun stopAnalysis() {
+        AnalysisResumeState.clear(this)
+        OverlayController.removeAnyOverlay(this)
+        stopService(Intent(this, CaptureService::class.java))
+        Toast.makeText(this, "Análisis detenido", Toast.LENGTH_SHORT).show()
+        updateStatus()
+    }
 
-        if (
-            intent?.action !=
-            AnalysisResumeState.ACTION_RESUME_ANALYSIS
-        ) {
-            return
-        }
+    private fun handleResumeIntentIfNeeded(intent: Intent?) {
+        if (handledResumeIntent) return
+        if (intent?.action != AnalysisResumeState.ACTION_RESUME_ANALYSIS) return
 
         handledResumeIntent = true
         intent.action = null
 
-        if (
-            AnalysisResumeState.isPending(this)
-        ) {
+        if (AnalysisResumeState.isPending(this)) {
             startAnalysisFlow()
         }
     }
 
-    private fun sectionTitle(
-        title: String,
-        top: Int,
-        bottom: Int
-    ) =
-        TextView(this).apply {
-            text =
-                title
-
-            textSize =
-                21f
-
-            setTypeface(
-                typeface,
-                android.graphics.Typeface.BOLD
-            )
-
-            setPadding(
-                0,
-                top,
-                0,
-                bottom
-            )
-        }
-
-    private fun numberField(
-        label: String,
-        value: Double
-    ): EditText =
-        EditText(this).apply {
-            hint =
-                label
-
-            setText(
-                if (
-                    value % 1.0 == 0.0
-                ) {
-                    value.toInt().toString()
-                } else {
-                    value.toString()
-                }
-            )
-
-            inputType =
-                InputType.TYPE_CLASS_NUMBER or
-                    InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-
-    private fun matchWidth() =
-        LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity =
-                Gravity.CENTER_HORIZONTAL
-        }
-
-    private fun spacer(height: Int) =
-        TextView(this).apply {
-            layoutParams =
-                LinearLayout.LayoutParams(
-                    1,
-                    height
-                )
-        }
-
     private fun openOverlayPermission() {
-        if (
-            Settings.canDrawOverlays(this)
-        ) {
+        if (Settings.canDrawOverlays(this)) {
             Toast.makeText(
                 this,
                 "El permiso ya está concedido",
                 Toast.LENGTH_SHORT
             ).show()
-
             return
         }
 
         startActivity(
             Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse(
-                    "package:$packageName"
-                )
+                Uri.parse("package:$packageName")
             )
         )
     }
 
     @Suppress("DEPRECATION")
     private fun startAnalysisFlow() {
-        if (
-            !Settings.canDrawOverlays(this)
-        ) {
+        if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(
                 this,
                 "Primero permite la superposición",
                 Toast.LENGTH_LONG
             ).show()
-
             openOverlayPermission()
             return
         }
@@ -592,9 +558,7 @@ class MainActivity : Activity() {
         OverlayController.removeAnyOverlay(this)
 
         val manager =
-            getSystemService(
-                Context.MEDIA_PROJECTION_SERVICE
-            ) as MediaProjectionManager
+            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         startActivityForResult(
             manager.createScreenCaptureIntent(),
@@ -602,131 +566,28 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun saveSettings(
-        showToast: Boolean
-    ) {
-        fun positive(
-            field: EditText,
-            fallback: Double
-        ): Double {
-            val value =
-                field.text
-                    .toString()
-                    .toDoubleOrNull()
-                    ?: fallback
-
-            return if (
-                value > 0.0
-            ) {
-                value
-            } else {
-                fallback
-            }
-        }
-
-        preferences.save(
-            Thresholds(
-                hourlyExcellent =
-                    positive(
-                        hourlyExcellent,
-                        300.0
-                    ),
-                hourlyGood =
-                    positive(
-                        hourlyGood,
-                        220.0
-                    ),
-                kmExcellent =
-                    positive(
-                        kmExcellent,
-                        8.0
-                    ),
-                kmGood =
-                    positive(
-                        kmGood,
-                        6.0
-                    ),
-                targetHourly1 =
-                    positive(
-                        targetHourly1,
-                        150.0
-                    ),
-                targetHourly2 =
-                    positive(
-                        targetHourly2,
-                        180.0
-                    ),
-                targetHourly3 =
-                    positive(
-                        targetHourly3,
-                        210.0
-                    )
-            )
-        )
-
-        if (showToast) {
-            Toast.makeText(
-                this,
-                "Configuración guardada",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    private fun updateStatus() {
-        val pending =
-            AnalysisResumeState.isPending(this)
-
-        resumeButton.visibility =
-            if (pending) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
-
-        status.text =
-            when {
-                pending -> {
-                    val reason =
-                        AnalysisResumeState.reason(this)
-
-                    if (
-                        reason ==
-                        AnalysisResumeState.REASON_SCREEN_LOCK
-                    ) {
-                        "⏸ Análisis pausado al bloquear la pantalla. Pulsa Reanudar análisis y vuelve a autorizar la captura."
-                    } else {
-                        "⏸ La captura se detuvo. Pulsa Reanudar análisis para continuar."
-                    }
-                }
-
-                Settings.canDrawOverlays(this) ->
-                    "✓ Superposición permitida. Ya puedes iniciar el análisis."
-
-                else ->
-                    "Falta permiso de superposición. Android te pedirá autorizarlo una sola vez."
-            }
-    }
+    private fun startOfToday(): Long =
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
 
     private fun requestNotificationPermissionIfNeeded() {
         if (
             Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(
-                Manifest.permission.POST_NOTIFICATIONS
-            ) !=
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(
-                arrayOf(
-                    Manifest.permission.POST_NOTIFICATIONS
-                ),
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                 200
             )
         }
     }
 
     companion object {
-        private const val REQUEST_CAPTURE =
-            1001
+        private const val REQUEST_CAPTURE = 1001
     }
 }

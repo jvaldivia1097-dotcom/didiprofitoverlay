@@ -2,10 +2,12 @@ package com.jonathan.didiprofit
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
-import android.widget.Button
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -17,16 +19,18 @@ import java.util.Locale
 class HistoryActivity : Activity() {
     private lateinit var repository: HistoryRepository
     private lateinit var content: LinearLayout
-    private var topMode = HistoryTopMode.SCORE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = HistoryRepository(this)
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(20), dp(18), dp(28))
+
+        window.statusBarColor = Color.WHITE
+        window.navigationBarColor = Color.WHITE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
         }
-        setContentView(ScrollView(this).apply { addView(content) })
+
+        setContentView(buildUi())
     }
 
     override fun onResume() {
@@ -34,250 +38,348 @@ class HistoryActivity : Activity() {
         render()
     }
 
+    private fun buildUi(): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(AppUi.BG)
+        }
+
+        val scroll = ScrollView(this)
+        content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                AppUi.dp(this@HistoryActivity, 18),
+                AppUi.dp(this@HistoryActivity, 18),
+                AppUi.dp(this@HistoryActivity, 18),
+                AppUi.dp(this@HistoryActivity, 28)
+            )
+        }
+        scroll.addView(content)
+
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        root.addView(AppUi.bottomNav(this, AppSection.HISTORY))
+        return root
+    }
+
     private fun render() {
         content.removeAllViews()
 
-        content.addView(TextView(this).apply {
-            text = "Historial y estadísticas"
-            textSize = 27f
-            setTextColor(Color.rgb(25, 25, 25))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
 
-        content.addView(TextView(this).apply {
-            text = "V3.3.2 guarda únicamente los datos numéricos de las propuestas. No guarda capturas."
+        val back = TextView(this).apply {
+            text = "‹"
+            textSize = 34f
+            setTextColor(AppUi.TEXT)
+            setPadding(0, 0, AppUi.dp(this@HistoryActivity, 12), 0)
+            setOnClickListener { finish() }
+        }
+        header.addView(back)
+
+        val titles = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        titles.addView(AppUi.title(this, "Historial y estadísticas", 24f))
+        titles.addView(AppUi.body(this, "Datos numéricos · sin capturas", 12f))
+        header.addView(
+            titles,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        val topShortcut = TextView(this).apply {
+            text = "★ Top 10"
             textSize = 13f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, dp(5), 0, dp(14))
-        })
+            setTextColor(AppUi.ORANGE)
+            setPadding(
+                AppUi.dp(this@HistoryActivity, 10),
+                AppUi.dp(this@HistoryActivity, 8),
+                AppUi.dp(this@HistoryActivity, 10),
+                AppUi.dp(this@HistoryActivity, 8)
+            )
+            background = AppUi.rounded(
+                this@HistoryActivity,
+                AppUi.ORANGE_TINT,
+                14,
+                AppUi.ORANGE
+            )
+            setOnClickListener {
+                startActivity(Intent(this@HistoryActivity, TopTenActivity::class.java))
+            }
+        }
+        header.addView(topShortcut)
 
-        val startOfToday = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
+        content.addView(header)
 
-        val todayStats = repository.statsSince(startOfToday)
-        addStatsBlock("Hoy", todayStats)
-        addTopTenBlock(startOfToday, todayStats)
-        addStatsBlock("Todo el historial", repository.statsSince(0L))
+        val todayStats = repository.statsSince(startOfToday())
+        content.addView(AppUi.sectionTitle(this, "Hoy"))
+        content.addView(statsCard(todayStats, today = true))
 
-        content.addView(Button(this).apply {
-            text = "Borrar historial"
-            setOnClickListener { confirmClear() }
-        }, fullWidth())
+        val allStats = repository.statsSince(0L)
+        content.addView(AppUi.sectionTitle(this, "Todo el historial"))
+        content.addView(statsCard(allStats, today = false))
 
-        content.addView(TextView(this).apply {
-            text = "Propuestas recientes"
-            textSize = 21f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(18), 0, dp(8))
-        })
+        val topAction = AppUi.secondaryButton(this, "★  Ver mejores propuestas") {
+            startActivity(Intent(this, TopTenActivity::class.java))
+        }
+        content.addView(topAction, AppUi.fullWidth(this, 12, 0))
+
+        content.addView(AppUi.sectionTitle(this, "Propuestas recientes"))
 
         val recent = repository.recent(100)
         if (recent.isEmpty()) {
-            content.addView(TextView(this).apply {
-                text = "Todavía no hay propuestas guardadas."
-                textSize = 15f
-                setTextColor(Color.DKGRAY)
-                setPadding(0, dp(12), 0, dp(12))
-            })
-            return
-        }
-
-        val formatter = SimpleDateFormat("dd/MM · HH:mm", Locale.getDefault())
-
-        recent.forEach { item ->
-            addProposalCard(item, formatter, rank = null)
-        }
-    }
-
-    private fun addTopTenBlock(startOfToday: Long, todayStats: HistoryStats) {
-        content.addView(TextView(this).apply {
-            text = "Mejores propuestas de hoy"
-            textSize = 21f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(18), 0, dp(8))
-        })
-
-        val buttonRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        fun modeButton(label: String, mode: HistoryTopMode): Button =
-            Button(this).apply {
-                text = label
-                isEnabled = topMode != mode
-                textSize = 11f
-                setOnClickListener {
-                    topMode = mode
-                    render()
+            val empty = AppUi.card(this)
+            empty.addView(AppUi.title(this, "Todavía no hay propuestas", 16f))
+            empty.addView(
+                AppUi.body(
+                    this,
+                    "Cuando el análisis detecte propuestas, aparecerán aquí automáticamente.",
+                    13f
+                ).apply {
+                    setPadding(0, AppUi.dp(this@HistoryActivity, 5), 0, 0)
                 }
-            }
-
-        buttonRow.addView(
-            modeButton("Rentabilidad", HistoryTopMode.SCORE),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        buttonRow.addView(
-            modeButton("$/hora", HistoryTopMode.HOURLY),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        buttonRow.addView(
-            modeButton("$/km", HistoryTopMode.KM),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        content.addView(buttonRow, fullWidth())
-
-        val top = repository.topSince(startOfToday, topMode, 10)
-        if (top.isEmpty()) {
-            content.addView(TextView(this).apply {
-                text = "Todavía no hay suficientes datos de hoy."
-                textSize = 14f
-                setTextColor(Color.DKGRAY)
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                setBackgroundColor(Color.rgb(242, 242, 242))
-            }, fullWidth())
-            return
-        }
-
-        val avgHourly = top.map { it.pesosPerHour }.average()
-        val avgKm = top.map { it.pesosPerKm }.average()
-        val avgScore = top.map { it.score }.average()
-        val cutoff = top.last()
-
-        val cutoffText = when (topMode) {
-            HistoryTopMode.SCORE -> String.format(
-                Locale.US,
-                "%d/100 · $%.0f/h · $%.2f/km",
-                cutoff.score,
-                cutoff.pesosPerHour,
-                cutoff.pesosPerKm
             )
-            HistoryTopMode.HOURLY -> String.format(Locale.US, "$%.0f/h", cutoff.pesosPerHour)
-            HistoryTopMode.KM -> String.format(Locale.US, "$%.2f/km", cutoff.pesosPerKm)
-        }
-
-        val n = top.size
-        val summary = String.format(
-            Locale.US,
-            "Promedio Top %d: $%.0f/h · $%.2f/km · %.0f/100\n" +
-                "Máximos observados hoy: $%.0f/h · $%.2f/km\n" +
-                "Corte para entrar al Top %d: %s",
-            n,
-            avgHourly,
-            avgKm,
-            avgScore,
-            todayStats.bestHourly,
-            todayStats.bestKm,
-            n,
-            cutoffText
-        )
-
-        content.addView(TextView(this).apply {
-            text = summary
-            textSize = 14f
-            setTextColor(Color.DKGRAY)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(Color.rgb(242, 242, 242))
-        }, fullWidth().apply {
-            setMargins(0, dp(5), 0, dp(8))
-        })
-
-        val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
-        top.forEachIndexed { index, item ->
-            addProposalCard(item, formatter, rank = index + 1)
-        }
-    }
-
-    private fun addProposalCard(
-        item: HistoryEntry,
-        formatter: SimpleDateFormat,
-        rank: Int?
-    ) {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(Color.rgb(245, 245, 245))
-        }
-
-        card.addView(TextView(this).apply {
-            val prefix = rank?.let { "#$it  " } ?: ""
-            text = prefix + String.format(
-                Locale.US,
-                "$%.2f  ·  $%.0f/h  ·  $%.2f/km",
-                item.fare,
-                item.pesosPerHour,
-                item.pesosPerKm
-            )
-            textSize = 17f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.rgb(20, 20, 20))
-        })
-
-        card.addView(TextView(this).apply {
-            text = String.format(
-                Locale.US,
-                "%d min · %.1f km · puntaje %d/100",
-                item.totalMinutes,
-                item.totalKm,
-                item.score
-            )
-            textSize = 14f
-            setTextColor(Color.DKGRAY)
-        })
-
-        card.addView(TextView(this).apply {
-            val seen = if (item.seenCount > 1) " · vista ${item.seenCount} veces" else ""
-            text = "${formatter.format(Date(item.lastSeen))}$seen"
-            textSize = 12f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(3), 0, 0)
-        })
-
-        content.addView(card, fullWidth().apply {
-            setMargins(0, 0, 0, dp(8))
-        })
-    }
-
-    private fun addStatsBlock(title: String, stats: HistoryStats) {
-        content.addView(TextView(this).apply {
-            text = title
-            textSize = 20f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(10), 0, dp(5))
-        })
-
-        val summary = if (stats.count == 0) {
-            "Sin propuestas"
+            content.addView(empty)
         } else {
-            String.format(
-                Locale.US,
-                "%d propuestas únicas\nPromedio: $%.0f/h · $%.2f/km · %.0f/100\nMejor: $%.0f/h · $%.2f/km",
-                stats.count,
-                stats.avgHourly,
-                stats.avgKm,
-                stats.avgScore,
-                stats.bestHourly,
-                stats.bestKm
+            val formatter = SimpleDateFormat("dd/MM · HH:mm", Locale.getDefault())
+            recent.forEach { item ->
+                content.addView(
+                    proposalCard(item, formatter),
+                    AppUi.fullWidth(this, 0, 8)
+                )
+            }
+        }
+
+        content.addView(
+            AppUi.dangerButton(this, "Borrar historial") {
+                confirmClear()
+            },
+            AppUi.fullWidth(this, 18, 0)
+        )
+
+        content.addView(
+            AppUi.body(
+                this,
+                "V3.4 conserva la base de datos e historial de V3.3.2.",
+                11.5f
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, AppUi.dp(this@HistoryActivity, 12), 0, 0)
+            }
+        )
+    }
+
+    private fun statsCard(
+        stats: HistoryStats,
+        today: Boolean
+    ): LinearLayout {
+        val card = AppUi.card(this)
+
+        if (stats.count == 0) {
+            card.addView(
+                AppUi.title(
+                    this,
+                    if (today) "Sin propuestas hoy" else "Sin historial",
+                    16f
+                )
+            )
+            card.addView(
+                AppUi.body(
+                    this,
+                    if (today) {
+                        "Aún no hay suficientes datos del día para mostrar estadísticas."
+                    } else {
+                        "Las estadísticas aparecerán cuando se guarden propuestas."
+                    },
+                    13f
+                ).apply {
+                    setPadding(0, AppUi.dp(this@HistoryActivity, 5), 0, 0)
+                }
+            )
+            return card
+        }
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val metrics = listOf(
+            Triple(
+                stats.count.toString(),
+                "Propuestas",
+                AppUi.TEXT
+            ),
+            Triple(
+                String.format(Locale.US, "$%.0f/h", stats.avgHourly),
+                "Promedio $/h",
+                AppUi.GREEN
+            ),
+            Triple(
+                String.format(Locale.US, "%.0f/100", stats.avgScore),
+                "Puntaje",
+                AppUi.scoreColor(stats.avgScore.toInt())
+            )
+        )
+
+        metrics.forEach { (value, label, color) ->
+            row.addView(
+                AppUi.metricTile(this, value, label, color),
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    setMargins(
+                        AppUi.dp(this@HistoryActivity, 3),
+                        0,
+                        AppUi.dp(this@HistoryActivity, 3),
+                        0
+                    )
+                }
             )
         }
 
-        content.addView(TextView(this).apply {
-            text = summary
-            textSize = 15f
-            setTextColor(Color.DKGRAY)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(Color.rgb(242, 242, 242))
-        }, fullWidth())
+        card.addView(row)
+        card.addView(
+            AppUi.body(
+                this,
+                String.format(
+                    Locale.US,
+                    "Promedio $/km: $%.2f   ·   Mejor $%.0f/h   ·   Mejor $%.2f/km",
+                    stats.avgKm,
+                    stats.bestHourly,
+                    stats.bestKm
+                ),
+                12.5f,
+                AppUi.TEXT
+            ).apply {
+                setPadding(
+                    AppUi.dp(this@HistoryActivity, 4),
+                    AppUi.dp(this@HistoryActivity, 12),
+                    AppUi.dp(this@HistoryActivity, 4),
+                    0
+                )
+            }
+        )
+        return card
+    }
+
+    private fun proposalCard(
+        item: HistoryEntry,
+        formatter: SimpleDateFormat
+    ): LinearLayout {
+        val card = AppUi.card(this, Color.WHITE, 13)
+
+        val firstRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val fare = AppUi.title(
+            this,
+            String.format(Locale.US, "$%.2f", item.fare),
+            17f
+        )
+        firstRow.addView(
+            fare,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        firstRow.addView(
+            TextView(this).apply {
+                text = String.format(Locale.US, "$%.0f/h", item.pesosPerHour)
+                textSize = 17f
+                setTextColor(AppUi.scoreColor(item.score))
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+        )
+
+        val score = TextView(this).apply {
+            text = "${item.score}"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(AppUi.scoreColor(item.score))
+            background = AppUi.rounded(
+                this@HistoryActivity,
+                Color.WHITE,
+                99,
+                AppUi.scoreColor(item.score)
+            )
+            setPadding(
+                AppUi.dp(this@HistoryActivity, 8),
+                AppUi.dp(this@HistoryActivity, 4),
+                AppUi.dp(this@HistoryActivity, 8),
+                AppUi.dp(this@HistoryActivity, 4)
+            )
+        }
+        firstRow.addView(
+            score,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(AppUi.dp(this@HistoryActivity, 10), 0, 0, 0)
+            }
+        )
+        card.addView(firstRow)
+
+        card.addView(
+            AppUi.body(
+                this,
+                String.format(
+                    Locale.US,
+                    "%d min · %.1f km   ·   $%.2f/km",
+                    item.totalMinutes,
+                    item.totalKm,
+                    item.pesosPerKm
+                ),
+                13f,
+                AppUi.TEXT
+            ).apply {
+                setPadding(0, AppUi.dp(this@HistoryActivity, 5), 0, 0)
+            }
+        )
+
+        val seen = if (item.seenCount > 1) {
+            " · vista ${item.seenCount} veces"
+        } else {
+            ""
+        }
+        card.addView(
+            AppUi.body(
+                this,
+                "${formatter.format(Date(item.lastSeen))}$seen",
+                11.5f
+            ).apply {
+                setPadding(0, AppUi.dp(this@HistoryActivity, 4), 0, 0)
+            }
+        )
+
+        return card
     }
 
     private fun confirmClear() {
         AlertDialog.Builder(this)
             .setTitle("Borrar historial")
-            .setMessage("Se eliminarán todas las propuestas y estadísticas guardadas en este teléfono.")
+            .setMessage(
+                "Se eliminarán todas las propuestas y estadísticas guardadas en este teléfono."
+            )
             .setNegativeButton("Cancelar", null)
             .setPositiveButton("Borrar") { _, _ ->
                 repository.clearAll()
@@ -286,12 +388,11 @@ class HistoryActivity : Activity() {
             .show()
     }
 
-    private fun fullWidth() = LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT,
-        LinearLayout.LayoutParams.WRAP_CONTENT
-    ).apply {
-        gravity = Gravity.CENTER_HORIZONTAL
-    }
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun startOfToday(): Long =
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
 }
