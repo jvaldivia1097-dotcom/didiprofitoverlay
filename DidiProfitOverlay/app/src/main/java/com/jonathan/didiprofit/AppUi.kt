@@ -7,7 +7,9 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.os.Build
 import android.view.View
+import android.view.WindowInsets
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -234,17 +236,47 @@ object AppUi {
         activity: Activity,
         selected: AppSection
     ): LinearLayout {
+        val baseLeft = dp(activity, 8)
+        val baseTop = dp(activity, 6)
+        val baseRight = dp(activity, 8)
+        val baseBottom = dp(activity, 7)
+
         val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(
-                dp(activity, 8),
-                dp(activity, 6),
-                dp(activity, 8),
-                dp(activity, 7)
+                baseLeft,
+                baseTop,
+                baseRight,
+                baseBottom
             )
             setBackgroundColor(Color.WHITE)
             elevation = dp(activity, 9).toFloat()
+
+            /*
+             * Android 15 / targetSdk 35 usa edge-to-edge.
+             * La barra inferior debe sumar el inset de navegación del sistema
+             * para no quedar debajo de los botones/gestos del teléfono.
+             */
+            setOnApplyWindowInsetsListener { view, insets ->
+                val navigationBottom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+                } else {
+                    @Suppress("DEPRECATION")
+                    insets.systemWindowInsetBottom
+                }
+
+                view.setPadding(
+                    baseLeft,
+                    baseTop,
+                    baseRight,
+                    baseBottom + navigationBottom
+                )
+
+                insets
+            }
+
+            requestApplyInsets()
         }
 
         data class Item(

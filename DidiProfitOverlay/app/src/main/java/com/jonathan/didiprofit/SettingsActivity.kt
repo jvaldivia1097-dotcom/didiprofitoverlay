@@ -233,7 +233,7 @@ class SettingsActivity : Activity() {
         content.addView(
             AppUi.body(
                 this,
-                "Versión 3.4",
+                "Versión 3.4.1",
                 11.5f
             ).apply {
                 gravity = Gravity.CENTER
