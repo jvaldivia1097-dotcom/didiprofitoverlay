@@ -10,8 +10,10 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.text.format.DateFormat
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.Date
 import java.util.Locale
 import kotlin.math.hypot
 
@@ -25,6 +27,7 @@ class OverlayController(
     private var kmView: TextView? = null
     private var detailsView: TextView? = null
     private var scoreView: TextView? = null
+    private var finishEstimateView: TextView? = null
     private var suggestionsTitleView: TextView? = null
     private var suggestionsView: TextView? = null
     private var stopTarget: TextView? = null
@@ -41,6 +44,8 @@ class OverlayController(
         kmView?.setTextColor(Color.LTGRAY)
         detailsView?.text = "Incluye recogida + viaje"
         scoreView?.visibility = View.GONE
+        finishEstimateView?.visibility = View.GONE
+        finishEstimateView?.text = ""
         suggestionsTitleView?.visibility = View.GONE
         suggestionsView?.visibility = View.GONE
         suggestionsView?.text = ""
@@ -77,6 +82,16 @@ class OverlayController(
         scoreView?.text = "Rentabilidad $score/100 · ${offer.profitabilityLabel(thresholds)}"
         scoreView?.setTextColor(score100Color(score))
 
+        val estimatedFinish = TripTimeEstimator.estimatedFinishMillis(offer)
+        if (estimatedFinish != null) {
+            val timeText = DateFormat.getTimeFormat(context).format(Date(estimatedFinish))
+            finishEstimateView?.visibility = View.VISIBLE
+            finishEstimateView?.text = "Fin aprox. si aceptas: $timeText"
+        } else {
+            finishEstimateView?.visibility = View.GONE
+            finishEstimateView?.text = ""
+        }
+
         suggestionsTitleView?.visibility = View.VISIBLE
         suggestionsView?.visibility = View.VISIBLE
         suggestionsView?.text = listOf(
@@ -98,6 +113,7 @@ class OverlayController(
         kmView = null
         detailsView = null
         scoreView = null
+        finishEstimateView = null
         suggestionsTitleView = null
         suggestionsView = null
     }
@@ -136,6 +152,13 @@ class OverlayController(
             setPadding(0, dp(4), 0, 0)
             visibility = View.GONE
         }
+        finishEstimateView = TextView(context).apply {
+            textSize = 12f
+            setTextColor(Color.rgb(125, 211, 252))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(5), 0, 0)
+            visibility = View.GONE
+        }
         suggestionsTitleView = TextView(context).apply {
             text = "Pon Tu Precio · mínimo"
             textSize = 12f
@@ -155,6 +178,7 @@ class OverlayController(
         container.addView(kmView)
         container.addView(detailsView)
         container.addView(scoreView)
+        container.addView(finishEstimateView)
         container.addView(suggestionsTitleView)
         container.addView(suggestionsView)
 
