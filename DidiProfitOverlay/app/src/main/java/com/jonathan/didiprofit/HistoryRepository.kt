@@ -43,8 +43,8 @@ class HistoryRepository(context: Context) {
     private val dbHelper = Db(context.applicationContext)
 
     /**
-     * Returns true when a new unique proposal was inserted.
-     * Returns false when it was merged with a recently-seen duplicate.
+     * Keeps V3.2 duplicate behavior:
+     * the first confirmed numeric reading is canonical.
      */
     @Synchronized
     fun recordOrMerge(
@@ -70,26 +70,20 @@ class HistoryRepository(context: Context) {
             while (it.moveToNext()) {
                 val existing = row(it)
                 if (sameProposal(existing, offer)) {
-                    /*
-                     * V3.2: a duplicate must NOT replace the original numeric data.
-                     *
-                     * OCR can read the same proposal a second time with a tiny variation
-                     * (for example 27 min -> 28 min). Before V3.2 that later reading
-                     * overwrote fare/route/pph/ppkm/score and could slightly distort
-                     * statistics and Top 10 rankings.
-                     *
-                     * The first valid reading is now the canonical record. A duplicate
-                     * only refreshes last_seen and, when enough time has passed,
-                     * increments seen_count.
-                     */
                     val values = ContentValues().apply {
                         put("last_seen", now)
                         put(
                             "seen_count",
-                            existing.seenCount + if (now - existing.lastSeen >= REAPPEAR_GAP_MS) 1 else 0
+                            existing.seenCount +
+                                if (now - existing.lastSeen >= REAPPEAR_GAP_MS) 1 else 0
                         )
                     }
-                    db.update(TABLE, values, "id = ?", arrayOf(existing.id.toString()))
+                    db.update(
+                        TABLE,
+                        values,
+                        "id = ?",
+                        arrayOf(existing.id.toString())
+                    )
                     return false
                 }
             }
@@ -103,51 +97,83 @@ class HistoryRepository(context: Context) {
         return true
     }
 
-    fun recent(limit: Int = 75): List<HistoryEntry> {
-        val result = ArrayList<HistoryEntry>()
-        dbHelper.readableDatabase.query(
-            TABLE,
-            null,
-            null,
-            null,
-            null,
-            null,
-            "last_seen DESC",
-            limit.coerceIn(1, 300).toString()
-        ).use {
-            while (it.moveToNext()) result += row(it)
-        }
-        return result
-    }
+    /**
+     * Complete history, newest original proposals first.
+     */
+    fun recent(limit: Int = 75): List<HistoryEntry> =
+        queryEntries(
+            selection = null,
+            args = null,
+            orderBy = "first_seen DESC",
+            limit = limit
+        )
+
+    /**
+     * Proposals whose ORIGINAL registration belongs to [startInclusive, endExclusive).
+     */
+    fun recentBetween(
+        startInclusive: Long,
+        endExclusive: Long,
+        limit: Int = 300
+    ): List<HistoryEntry> =
+        queryEntries(
+            selection = "first_seen >= ? AND first_seen < ?",
+            args = arrayOf(
+                startInclusive.toString(),
+                endExclusive.toString()
+            ),
+            orderBy = "first_seen DESC",
+            limit = limit
+        )
 
     fun topSince(
         since: Long,
         mode: HistoryTopMode,
         limit: Int = 10
+    ): List<HistoryEntry> =
+        topBetween(
+            since,
+            Long.MAX_VALUE,
+            mode,
+            limit
+        )
+
+    fun topBetween(
+        startInclusive: Long,
+        endExclusive: Long,
+        mode: HistoryTopMode,
+        limit: Int = 10
     ): List<HistoryEntry> {
         val orderBy = when (mode) {
-            HistoryTopMode.SCORE -> "score DESC, pph DESC, ppkm DESC, last_seen DESC"
-            HistoryTopMode.HOURLY -> "pph DESC, ppkm DESC, score DESC, last_seen DESC"
-            HistoryTopMode.KM -> "ppkm DESC, pph DESC, score DESC, last_seen DESC"
+            HistoryTopMode.SCORE ->
+                "score DESC, pph DESC, ppkm DESC, first_seen DESC"
+            HistoryTopMode.HOURLY ->
+                "pph DESC, ppkm DESC, score DESC, first_seen DESC"
+            HistoryTopMode.KM ->
+                "ppkm DESC, pph DESC, score DESC, first_seen DESC"
         }
 
-        val result = ArrayList<HistoryEntry>()
-        dbHelper.readableDatabase.query(
-            TABLE,
-            null,
-            "last_seen >= ?",
-            arrayOf(since.toString()),
-            null,
-            null,
-            orderBy,
-            limit.coerceIn(1, 50).toString()
-        ).use {
-            while (it.moveToNext()) result += row(it)
-        }
-        return result
+        return queryEntries(
+            selection = "first_seen >= ? AND first_seen < ?",
+            args = arrayOf(
+                startInclusive.toString(),
+                endExclusive.toString()
+            ),
+            orderBy = orderBy,
+            limit = limit.coerceIn(1, 50)
+        )
     }
 
-    fun statsSince(since: Long = 0L): HistoryStats {
+    /**
+     * V3.5.1: day/statistical grouping is based on first_seen, not last_seen.
+     */
+    fun statsSince(since: Long = 0L): HistoryStats =
+        statsBetween(since, Long.MAX_VALUE)
+
+    fun statsBetween(
+        startInclusive: Long,
+        endExclusive: Long
+    ): HistoryStats {
         val sql = """
             SELECT COUNT(*) AS c,
                    COALESCE(AVG(pph), 0) AS ah,
@@ -156,10 +182,16 @@ class HistoryRepository(context: Context) {
                    COALESCE(MAX(pph), 0) AS bh,
                    COALESCE(MAX(ppkm), 0) AS bk
             FROM $TABLE
-            WHERE last_seen >= ?
+            WHERE first_seen >= ? AND first_seen < ?
         """.trimIndent()
 
-        dbHelper.readableDatabase.rawQuery(sql, arrayOf(since.toString())).use {
+        dbHelper.readableDatabase.rawQuery(
+            sql,
+            arrayOf(
+                startInclusive.toString(),
+                endExclusive.toString()
+            )
+        ).use {
             if (!it.moveToFirst()) return HistoryStats()
             return HistoryStats(
                 count = it.getInt(0),
@@ -172,17 +204,45 @@ class HistoryRepository(context: Context) {
         }
     }
 
+    fun deleteById(id: Long): Boolean =
+        dbHelper.writableDatabase.delete(
+            TABLE,
+            "id = ?",
+            arrayOf(id.toString())
+        ) > 0
+
     fun clearAll() {
         dbHelper.writableDatabase.delete(TABLE, null, null)
     }
 
-    private fun sameProposal(old: HistoryEntry, offer: RideOffer): Boolean {
-        return abs(old.fare - offer.fare) <= 0.02 &&
+    private fun queryEntries(
+        selection: String?,
+        args: Array<String>?,
+        orderBy: String,
+        limit: Int
+    ): List<HistoryEntry> {
+        val result = ArrayList<HistoryEntry>()
+        dbHelper.readableDatabase.query(
+            TABLE,
+            null,
+            selection,
+            args,
+            null,
+            null,
+            orderBy,
+            limit.coerceIn(1, 500).toString()
+        ).use {
+            while (it.moveToNext()) result += row(it)
+        }
+        return result
+    }
+
+    private fun sameProposal(old: HistoryEntry, offer: RideOffer): Boolean =
+        abs(old.fare - offer.fare) <= 0.02 &&
             abs(old.pickupMinutes - offer.pickup.minutes) <= 1 &&
             abs(old.tripMinutes - offer.trip.minutes) <= 1 &&
             abs(old.pickupKm - offer.pickup.kilometers) <= 0.60 &&
             abs(old.tripKm - offer.trip.kilometers) <= 0.25
-    }
 
     private fun valuesFor(
         offer: RideOffer,
@@ -237,10 +297,16 @@ class HistoryRepository(context: Context) {
                 )
                 """.trimIndent()
             )
-            db.execSQL("CREATE INDEX idx_history_last_seen ON $TABLE(last_seen)")
+            db.execSQL(
+                "CREATE INDEX idx_history_last_seen ON $TABLE(last_seen)"
+            )
         }
 
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        override fun onUpgrade(
+            db: SQLiteDatabase,
+            oldVersion: Int,
+            newVersion: Int
+        ) = Unit
     }
 
     companion object {

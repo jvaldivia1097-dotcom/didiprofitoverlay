@@ -44,7 +44,7 @@ class CaptureService : Service() {
     @Volatile private var explicitStopRequested = false
     private var lastFrameAt = 0L
     private var lastOfferAt = 0L
-    private var lastSignature = ""
+    private val historyCandidateTracker = HistoryCandidateTracker()
 
     private val pendingLock = Any()
     private var pendingImage: Image? = null
@@ -105,6 +105,7 @@ class CaptureService : Service() {
 
         isStopping = true
         mainHandler.removeCallbacksAndMessages(null)
+        historyCandidateTracker.reset()
         if (::overlay.isInitialized) overlay.remove()
         OverlayController.removeAnyOverlay(this)
 
@@ -366,7 +367,7 @@ class CaptureService : Service() {
 
         if (OfferParser.isOfferInactive(lines)) {
             lastOfferAt = 0L
-            lastSignature = ""
+            historyCandidateTracker.reset()
             postOverlay { overlay.showWaiting() }
             return true
         }
@@ -374,27 +375,42 @@ class CaptureService : Service() {
         val offer = OfferParser.parse(lines)
         if (offer != null && isPlausible(offer)) {
             lastOfferAt = now
-            val signature =
-                "${offer.fare}|${offer.pickup.minutes}|${"%.3f".format(offer.pickup.kilometers)}|" +
-                    "${offer.trip.minutes}|${"%.3f".format(offer.trip.kilometers)}"
             val thresholds = preferences.load()
 
-            if (signature != lastSignature) {
-                lastSignature = signature
+            /*
+             * V3.5.1:
+             * The overlay remains instant, exactly as before.
+             * History persistence waits for 3 stable consecutive parsed reads.
+             * No frames are merged and the OCR/parser output is not modified.
+             */
+            val confirmedForHistory = historyCandidateTracker.observe(offer)
+            if (confirmedForHistory != null) {
                 workerHandler?.post {
                     if (!isStopping) {
-                        history.recordOrMerge(offer, thresholds)
+                        history.recordOrMerge(
+                            confirmedForHistory,
+                            thresholds
+                        )
                     }
                 }
             }
 
-            postOverlay { overlay.showOffer(offer, thresholds) }
+            postOverlay {
+                overlay.showOffer(
+                    offer,
+                    thresholds
+                )
+            }
             return true
         }
 
-        if (finalAttempt && now - lastOfferAt > WAITING_RESET_MS) {
-            lastSignature = ""
-            postOverlay { overlay.showWaiting() }
+        if (finalAttempt) {
+            // A final OCR miss breaks the "consecutive stable reads" sequence.
+            historyCandidateTracker.reset()
+
+            if (now - lastOfferAt > WAITING_RESET_MS) {
+                postOverlay { overlay.showWaiting() }
+            }
         }
 
         return false
@@ -494,6 +510,7 @@ class CaptureService : Service() {
 
     override fun onDestroy() {
         isStopping = true
+        historyCandidateTracker.reset()
         mainHandler.removeCallbacksAndMessages(null)
 
         if (::overlay.isInitialized) overlay.remove()

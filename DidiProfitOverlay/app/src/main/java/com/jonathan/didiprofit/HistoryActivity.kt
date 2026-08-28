@@ -2,6 +2,7 @@ package com.jonathan.didiprofit
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
@@ -20,14 +21,19 @@ class HistoryActivity : Activity() {
     private lateinit var repository: HistoryRepository
     private lateinit var content: LinearLayout
 
+    private var selectedDayStart: Long = 0L
+    private var showAllHistory: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = HistoryRepository(this)
+        selectedDayStart = startOfToday()
 
         window.statusBarColor = Color.WHITE
         window.navigationBarColor = Color.WHITE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
         }
 
         setContentView(buildUi())
@@ -64,7 +70,12 @@ class HistoryActivity : Activity() {
                 1f
             )
         )
-        root.addView(AppUi.bottomNav(this, AppSection.HISTORY))
+        root.addView(
+            AppUi.bottomNav(
+                this,
+                AppSection.HISTORY
+            )
+        )
         return root
     }
 
@@ -76,20 +87,36 @@ class HistoryActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val back = TextView(this).apply {
+        header.addView(TextView(this).apply {
             text = "‹"
             textSize = 34f
             setTextColor(AppUi.TEXT)
-            setPadding(0, 0, AppUi.dp(this@HistoryActivity, 12), 0)
+            setPadding(
+                0,
+                0,
+                AppUi.dp(this@HistoryActivity, 12),
+                0
+            )
             setOnClickListener { finish() }
-        }
-        header.addView(back)
+        })
 
         val titles = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        titles.addView(AppUi.title(this, "Historial y estadísticas", 24f))
-        titles.addView(AppUi.body(this, "Datos numéricos · sin capturas", 12f))
+        titles.addView(
+            AppUi.title(
+                this,
+                "Historial y estadísticas",
+                24f
+            )
+        )
+        titles.addView(
+            AppUi.body(
+                this,
+                "Filtra tus propuestas por día",
+                12f
+            )
+        )
         header.addView(
             titles,
             LinearLayout.LayoutParams(
@@ -116,74 +143,371 @@ class HistoryActivity : Activity() {
                 AppUi.ORANGE
             )
             setOnClickListener {
-                startActivity(Intent(this@HistoryActivity, TopTenActivity::class.java))
+                startActivity(
+                    Intent(
+                        this@HistoryActivity,
+                        TopTenActivity::class.java
+                    ).putExtra(
+                        TopTenActivity.EXTRA_DAY_START,
+                        if (showAllHistory) startOfToday()
+                        else selectedDayStart
+                    )
+                )
             }
         }
         header.addView(topShortcut)
-
         content.addView(header)
 
-        val todayStats = repository.statsSince(startOfToday())
-        content.addView(AppUi.sectionTitle(this, "Hoy"))
-        content.addView(statsCard(todayStats, today = true))
+        content.addView(
+            dateFilterCard(),
+            AppUi.fullWidth(this, 18, 0)
+        )
 
-        val allStats = repository.statsSince(0L)
-        content.addView(AppUi.sectionTitle(this, "Todo el historial"))
-        content.addView(statsCard(allStats, today = false))
-
-        val topAction = AppUi.secondaryButton(this, "★  Ver mejores propuestas") {
-            startActivity(Intent(this, TopTenActivity::class.java))
+        val stats = if (showAllHistory) {
+            repository.statsSince(0L)
+        } else {
+            repository.statsBetween(
+                selectedDayStart,
+                nextDayStart(selectedDayStart)
+            )
         }
-        content.addView(topAction, AppUi.fullWidth(this, 12, 0))
 
-        content.addView(AppUi.sectionTitle(this, "Propuestas recientes"))
+        content.addView(
+            AppUi.sectionTitle(
+                this,
+                if (showAllHistory) {
+                    "Resumen general"
+                } else {
+                    "Resumen del día"
+                }
+            )
+        )
+        content.addView(statsCard(stats))
 
-        val recent = repository.recent(100)
-        if (recent.isEmpty()) {
+        content.addView(
+            AppUi.secondaryButton(
+                this,
+                "★  Ver Top 10 de ${shortDateLabel(selectedDayStart)}"
+            ) {
+                startActivity(
+                    Intent(
+                        this,
+                        TopTenActivity::class.java
+                    ).putExtra(
+                        TopTenActivity.EXTRA_DAY_START,
+                        selectedDayStart
+                    )
+                )
+            },
+            AppUi.fullWidth(this, 12, 0)
+        )
+
+        content.addView(
+            AppUi.sectionTitle(
+                this,
+                if (showAllHistory) {
+                    "Todas las propuestas"
+                } else {
+                    "Propuestas del día"
+                }
+            )
+        )
+
+        val entries = if (showAllHistory) {
+            repository.recent(300)
+        } else {
+            repository.recentBetween(
+                selectedDayStart,
+                nextDayStart(selectedDayStart),
+                300
+            )
+        }
+
+        if (entries.isEmpty()) {
             val empty = AppUi.card(this)
-            empty.addView(AppUi.title(this, "Todavía no hay propuestas", 16f))
+            empty.addView(
+                AppUi.title(
+                    this,
+                    if (showAllHistory) {
+                        "Todavía no hay propuestas"
+                    } else {
+                        "No hay propuestas en esta fecha"
+                    },
+                    16f
+                )
+            )
             empty.addView(
                 AppUi.body(
                     this,
-                    "Cuando el análisis detecte propuestas, aparecerán aquí automáticamente.",
+                    if (showAllHistory) {
+                        "Las propuestas confirmadas aparecerán aquí."
+                    } else {
+                        "Prueba seleccionando otro día en el calendario."
+                    },
                     13f
                 ).apply {
-                    setPadding(0, AppUi.dp(this@HistoryActivity, 5), 0, 0)
+                    setPadding(
+                        0,
+                        AppUi.dp(this@HistoryActivity, 5),
+                        0,
+                        0
+                    )
                 }
             )
             content.addView(empty)
         } else {
-            val formatter = SimpleDateFormat("dd/MM · HH:mm", Locale.getDefault())
-            recent.forEach { item ->
+            val formatter = SimpleDateFormat(
+                if (showAllHistory) {
+                    "dd/MM/yyyy · HH:mm"
+                } else {
+                    "HH:mm"
+                },
+                Locale.getDefault()
+            )
+
+            entries.forEach { item ->
                 content.addView(
-                    proposalCard(item, formatter),
+                    proposalCard(
+                        item,
+                        formatter
+                    ),
                     AppUi.fullWidth(this, 0, 8)
                 )
             }
         }
 
         content.addView(
-            AppUi.dangerButton(this, "Borrar historial") {
+            AppUi.body(
+                this,
+                "Mantén presionada una propuesta para eliminar un registro erróneo.",
+                11.5f
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(
+                    0,
+                    AppUi.dp(this@HistoryActivity, 12),
+                    0,
+                    0
+                )
+            }
+        )
+
+        content.addView(
+            AppUi.dangerButton(
+                this,
+                "Borrar todo el historial"
+            ) {
                 confirmClear()
             },
-            AppUi.fullWidth(this, 18, 0)
+            AppUi.fullWidth(this, 16, 0)
         )
 
         content.addView(
             AppUi.body(
                 this,
-                "V3.4 conserva la base de datos e historial de V3.3.2.",
-                11.5f
+                "V3.5.1 · El historial guarda propuestas sólo después de 3 lecturas estables.",
+                11f
             ).apply {
                 gravity = Gravity.CENTER
-                setPadding(0, AppUi.dp(this@HistoryActivity, 12), 0, 0)
+                setPadding(
+                    0,
+                    AppUi.dp(this@HistoryActivity, 12),
+                    0,
+                    0
+                )
             }
         )
     }
 
+    private fun dateFilterCard(): LinearLayout {
+        val card = AppUi.card(this)
+
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        tabs.addView(
+            AppUi.segment(
+                this,
+                "Por día",
+                !showAllHistory
+            ) {
+                showAllHistory = false
+                render()
+            },
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(
+                    0,
+                    0,
+                    AppUi.dp(this@HistoryActivity, 4),
+                    0
+                )
+            }
+        )
+
+        tabs.addView(
+            AppUi.segment(
+                this,
+                "Todo",
+                showAllHistory
+            ) {
+                showAllHistory = true
+                render()
+            },
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(
+                    AppUi.dp(this@HistoryActivity, 4),
+                    0,
+                    0,
+                    0
+                )
+            }
+        )
+
+        card.addView(tabs)
+
+        if (!showAllHistory) {
+            val dateRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(
+                    0,
+                    AppUi.dp(this@HistoryActivity, 13),
+                    0,
+                    0
+                )
+            }
+
+            dateRow.addView(
+                dateArrow("‹") {
+                    selectedDayStart =
+                        previousDayStart(selectedDayStart)
+                    render()
+                }
+            )
+
+            val dateCenter = TextView(this).apply {
+                text = longDateLabel(selectedDayStart)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(AppUi.TEXT)
+                typeface =
+                    android.graphics.Typeface.DEFAULT_BOLD
+                setPadding(
+                    AppUi.dp(this@HistoryActivity, 8),
+                    AppUi.dp(this@HistoryActivity, 9),
+                    AppUi.dp(this@HistoryActivity, 8),
+                    AppUi.dp(this@HistoryActivity, 9)
+                )
+                background = AppUi.rounded(
+                    this@HistoryActivity,
+                    AppUi.BG,
+                    13,
+                    AppUi.BORDER
+                )
+                setOnClickListener {
+                    openDatePicker()
+                }
+            }
+            dateRow.addView(
+                dateCenter,
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    setMargins(
+                        AppUi.dp(this@HistoryActivity, 7),
+                        0,
+                        AppUi.dp(this@HistoryActivity, 7),
+                        0
+                    )
+                }
+            )
+
+            dateRow.addView(
+                dateArrow("›") {
+                    val candidate =
+                        nextDayStart(selectedDayStart)
+                    if (candidate <= startOfToday()) {
+                        selectedDayStart = candidate
+                        render()
+                    }
+                }
+            )
+
+            card.addView(dateRow)
+
+            card.addView(
+                AppUi.body(
+                    this,
+                    "Toca la fecha para abrir el calendario",
+                    11f
+                ).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(
+                        0,
+                        AppUi.dp(this@HistoryActivity, 7),
+                        0,
+                        0
+                    )
+                }
+            )
+        } else {
+            card.addView(
+                AppUi.body(
+                    this,
+                    "Mostrando todo el historial guardado",
+                    12.5f
+                ).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(
+                        0,
+                        AppUi.dp(this@HistoryActivity, 12),
+                        0,
+                        0
+                    )
+                }
+            )
+        }
+
+        return card
+    }
+
+    private fun dateArrow(
+        symbol: String,
+        action: () -> Unit
+    ): TextView =
+        TextView(this).apply {
+            text = symbol
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(AppUi.ORANGE)
+            background = AppUi.rounded(
+                this@HistoryActivity,
+                AppUi.ORANGE_TINT,
+                13,
+                AppUi.ORANGE
+            )
+            setPadding(
+                AppUi.dp(this@HistoryActivity, 11),
+                AppUi.dp(this@HistoryActivity, 3),
+                AppUi.dp(this@HistoryActivity, 11),
+                AppUi.dp(this@HistoryActivity, 3)
+            )
+            setOnClickListener { action() }
+        }
+
     private fun statsCard(
-        stats: HistoryStats,
-        today: Boolean
+        stats: HistoryStats
     ): LinearLayout {
         val card = AppUi.card(this)
 
@@ -191,21 +515,22 @@ class HistoryActivity : Activity() {
             card.addView(
                 AppUi.title(
                     this,
-                    if (today) "Sin propuestas hoy" else "Sin historial",
+                    "Sin datos para este filtro",
                     16f
                 )
             )
             card.addView(
                 AppUi.body(
                     this,
-                    if (today) {
-                        "Aún no hay suficientes datos del día para mostrar estadísticas."
-                    } else {
-                        "Las estadísticas aparecerán cuando se guarden propuestas."
-                    },
+                    "No hay propuestas confirmadas en el periodo seleccionado.",
                     13f
                 ).apply {
-                    setPadding(0, AppUi.dp(this@HistoryActivity, 5), 0, 0)
+                    setPadding(
+                        0,
+                        AppUi.dp(this@HistoryActivity, 5),
+                        0,
+                        0
+                    )
                 }
             )
             return card
@@ -222,20 +547,37 @@ class HistoryActivity : Activity() {
                 AppUi.TEXT
             ),
             Triple(
-                String.format(Locale.US, "$%.0f/h", stats.avgHourly),
+                String.format(
+                    Locale.US,
+                    "$%.0f/h",
+                    stats.avgHourly
+                ),
                 "Promedio $/h",
                 AppUi.GREEN
             ),
             Triple(
-                String.format(Locale.US, "%.0f/100", stats.avgScore),
+                String.format(
+                    Locale.US,
+                    "%.0f/100",
+                    stats.avgScore
+                ),
                 "Puntaje",
-                AppUi.scoreColor(stats.avgScore.toInt())
+                AppUi.scoreColor(
+                    stats.avgScore.toInt()
+                )
             )
         )
 
-        metrics.forEach { (value, label, color) ->
+        metrics.forEach {
+            (value, label, color) ->
+
             row.addView(
-                AppUi.metricTile(this, value, label, color),
+                AppUi.metricTile(
+                    this,
+                    value,
+                    label,
+                    color
+                ),
                 LinearLayout.LayoutParams(
                     0,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -280,20 +622,27 @@ class HistoryActivity : Activity() {
         item: HistoryEntry,
         formatter: SimpleDateFormat
     ): LinearLayout {
-        val card = AppUi.card(this, Color.WHITE, 13)
+        val card = AppUi.card(
+            this,
+            Color.WHITE,
+            13
+        )
 
         val firstRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val fare = AppUi.title(
-            this,
-            String.format(Locale.US, "$%.2f", item.fare),
-            17f
-        )
         firstRow.addView(
-            fare,
+            AppUi.title(
+                this,
+                String.format(
+                    Locale.US,
+                    "$%.2f",
+                    item.fare
+                ),
+                17f
+            ),
             LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -303,40 +652,54 @@ class HistoryActivity : Activity() {
 
         firstRow.addView(
             TextView(this).apply {
-                text = String.format(Locale.US, "$%.0f/h", item.pesosPerHour)
+                text = String.format(
+                    Locale.US,
+                    "$%.0f/h",
+                    item.pesosPerHour
+                )
                 textSize = 17f
-                setTextColor(AppUi.scoreColor(item.score))
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(
+                    AppUi.scoreColor(item.score)
+                )
+                typeface =
+                    android.graphics.Typeface.DEFAULT_BOLD
             }
         )
 
-        val score = TextView(this).apply {
-            text = "${item.score}"
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(AppUi.scoreColor(item.score))
-            background = AppUi.rounded(
-                this@HistoryActivity,
-                Color.WHITE,
-                99,
-                AppUi.scoreColor(item.score)
-            )
-            setPadding(
-                AppUi.dp(this@HistoryActivity, 8),
-                AppUi.dp(this@HistoryActivity, 4),
-                AppUi.dp(this@HistoryActivity, 8),
-                AppUi.dp(this@HistoryActivity, 4)
-            )
-        }
         firstRow.addView(
-            score,
+            TextView(this).apply {
+                text = item.score.toString()
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(
+                    AppUi.scoreColor(item.score)
+                )
+                background = AppUi.rounded(
+                    this@HistoryActivity,
+                    Color.WHITE,
+                    99,
+                    AppUi.scoreColor(item.score)
+                )
+                setPadding(
+                    AppUi.dp(this@HistoryActivity, 8),
+                    AppUi.dp(this@HistoryActivity, 4),
+                    AppUi.dp(this@HistoryActivity, 8),
+                    AppUi.dp(this@HistoryActivity, 4)
+                )
+            },
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(AppUi.dp(this@HistoryActivity, 10), 0, 0, 0)
+                setMargins(
+                    AppUi.dp(this@HistoryActivity, 10),
+                    0,
+                    0,
+                    0
+                )
             }
         )
+
         card.addView(firstRow)
 
         card.addView(
@@ -352,7 +715,12 @@ class HistoryActivity : Activity() {
                 13f,
                 AppUi.TEXT
             ).apply {
-                setPadding(0, AppUi.dp(this@HistoryActivity, 5), 0, 0)
+                setPadding(
+                    0,
+                    AppUi.dp(this@HistoryActivity, 5),
+                    0,
+                    0
+                )
             }
         )
 
@@ -361,38 +729,180 @@ class HistoryActivity : Activity() {
         } else {
             ""
         }
+
         card.addView(
             AppUi.body(
                 this,
-                "${formatter.format(Date(item.lastSeen))}$seen",
+                "${formatter.format(Date(item.firstSeen))}$seen",
                 11.5f
             ).apply {
-                setPadding(0, AppUi.dp(this@HistoryActivity, 4), 0, 0)
+                setPadding(
+                    0,
+                    AppUi.dp(this@HistoryActivity, 4),
+                    0,
+                    0
+                )
             }
         )
+
+        card.setOnLongClickListener {
+            confirmDelete(item)
+            true
+        }
 
         return card
     }
 
+    private fun confirmDelete(
+        item: HistoryEntry
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle("Eliminar propuesta")
+            .setMessage(
+                String.format(
+                    Locale.US,
+                    "¿Eliminar la propuesta de $%.2f ($%.0f/h, $%.2f/km)?",
+                    item.fare,
+                    item.pesosPerHour,
+                    item.pesosPerKm
+                )
+            )
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Eliminar") {
+                    _,
+                    _ ->
+
+                repository.deleteById(item.id)
+                render()
+            }
+            .show()
+    }
+
     private fun confirmClear() {
         AlertDialog.Builder(this)
-            .setTitle("Borrar historial")
+            .setTitle("Borrar todo el historial")
             .setMessage(
                 "Se eliminarán todas las propuestas y estadísticas guardadas en este teléfono."
             )
             .setNegativeButton("Cancelar", null)
-            .setPositiveButton("Borrar") { _, _ ->
+            .setPositiveButton("Borrar") {
+                    _,
+                    _ ->
+
                 repository.clearAll()
                 render()
             }
             .show()
     }
 
-    private fun startOfToday(): Long =
+    private fun openDatePicker() {
+        val c = Calendar.getInstance().apply {
+            timeInMillis = selectedDayStart
+        }
+
+        DatePickerDialog(
+            this,
+            {
+                    _,
+                    year,
+                    month,
+                    dayOfMonth ->
+
+                selectedDayStart =
+                    startOfDay(
+                        year,
+                        month,
+                        dayOfMonth
+                    )
+                showAllHistory = false
+                render()
+            },
+            c.get(Calendar.YEAR),
+            c.get(Calendar.MONTH),
+            c.get(Calendar.DAY_OF_MONTH)
+        ).apply {
+            datePicker.maxDate =
+                System.currentTimeMillis()
+        }.show()
+    }
+
+    private fun longDateLabel(
+        millis: Long
+    ): String {
+        val prefix =
+            if (millis == startOfToday()) {
+                "Hoy · "
+            } else {
+                ""
+            }
+
+        val format = SimpleDateFormat(
+            "EEE d 'de' MMM yyyy",
+            Locale("es", "MX")
+        )
+
+        return prefix +
+            format.format(Date(millis))
+                .replaceFirstChar {
+                    if (it.isLowerCase()) {
+                        it.titlecase(
+                            Locale("es", "MX")
+                        )
+                    } else {
+                        it.toString()
+                    }
+                }
+    }
+
+    private fun shortDateLabel(
+        millis: Long
+    ): String =
+        if (millis == startOfToday()) {
+            "hoy"
+        } else {
+            SimpleDateFormat(
+                "d MMM",
+                Locale("es", "MX")
+            ).format(Date(millis))
+        }
+
+    private fun startOfToday(): Long {
+        val c = Calendar.getInstance()
+        return startOfDay(
+            c.get(Calendar.YEAR),
+            c.get(Calendar.MONTH),
+            c.get(Calendar.DAY_OF_MONTH)
+        )
+    }
+
+    private fun startOfDay(
+        year: Int,
+        month: Int,
+        day: Int
+    ): Long =
         Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            set(Calendar.DAY_OF_MONTH, day)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+    private fun previousDayStart(
+        millis: Long
+    ): Long =
+        Calendar.getInstance().apply {
+            timeInMillis = millis
+            add(Calendar.DAY_OF_MONTH, -1)
+        }.timeInMillis
+
+    private fun nextDayStart(
+        millis: Long
+    ): Long =
+        Calendar.getInstance().apply {
+            timeInMillis = millis
+            add(Calendar.DAY_OF_MONTH, 1)
         }.timeInMillis
 }
