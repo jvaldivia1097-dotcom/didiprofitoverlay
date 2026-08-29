@@ -174,7 +174,7 @@ class MainActivity : Activity() {
         headerText.addView(
             AppUi.body(
                 this,
-                "V3.6.2 · Análisis, historial y Pon Tu Precio",
+                "V3.6.3 · Análisis, historial y Pon Tu Precio",
                 12.5f
             ).apply {
                 setPadding(0, AppUi.dp(this@MainActivity, 3), 0, 0)

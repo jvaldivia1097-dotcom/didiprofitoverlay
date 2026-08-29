@@ -30,7 +30,8 @@ class OverlayController(
     private enum class Mode {
         ANALYZING,
         TIMER_SETUP,
-        TIMER_RUNNING
+        TIMER_RUNNING,
+        TIMER_FINISHED
     }
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -50,6 +51,7 @@ class OverlayController(
     private var timerMinutesView: TextView? = null
     private var timerPlusView: TextView? = null
     private var timerStartView: TextView? = null
+    private var timerFinishView: TextView? = null
     private var timerActionView: TextView? = null
 
     private var stopTarget: TextView? = null
@@ -168,6 +170,7 @@ class OverlayController(
         timerMinutesView = null
         timerPlusView = null
         timerStartView = null
+        timerFinishView = null
         timerActionView = null
     }
 
@@ -261,6 +264,15 @@ class OverlayController(
             visibility = View.GONE
         }
 
+        timerFinishView = actionButton(
+            "■ FINALIZAR VIAJE",
+            primary = true
+        ) {
+            finishTrip()
+        }.apply {
+            visibility = View.GONE
+        }
+
         timerActionView = actionButton(
             "Cancelar",
             primary = false
@@ -279,6 +291,7 @@ class OverlayController(
         container.addView(suggestionsView)
         container.addView(timerControls)
         container.addView(timerStartView)
+        container.addView(timerFinishView)
         container.addView(timerActionView)
 
         val lp = WindowManager.LayoutParams(
@@ -332,6 +345,7 @@ class OverlayController(
 
         timerControls?.visibility = View.VISIBLE
         timerStartView?.visibility = View.VISIBLE
+        timerFinishView?.visibility = View.GONE
         timerActionView?.apply {
             text = "Cancelar"
             visibility = View.VISIBLE
@@ -390,10 +404,8 @@ class OverlayController(
 
         timerControls?.visibility = View.GONE
         timerStartView?.visibility = View.GONE
-        timerActionView?.apply {
-            text = "▶ REANUDAR ANÁLISIS"
-            visibility = View.VISIBLE
-        }
+        timerFinishView?.visibility = View.VISIBLE
+        timerActionView?.visibility = View.GONE
 
         updateTimerDisplay()
         mainHandler.removeCallbacks(timerTick)
@@ -422,7 +434,8 @@ class OverlayController(
 
         timerControls?.visibility = View.GONE
         timerStartView?.visibility = View.GONE
-        timerActionView?.visibility = View.VISIBLE
+        timerFinishView?.visibility = View.VISIBLE
+        timerActionView?.visibility = View.GONE
 
         if (remaining > 0L) {
             hourlyView?.text =
@@ -473,6 +486,93 @@ class OverlayController(
         }
     }
 
+    private fun finishTrip() {
+        if (mode != Mode.TIMER_RUNNING) return
+
+        val nowElapsed =
+            SystemClock.elapsedRealtime()
+
+        val actualMillis =
+            (nowElapsed - timerStartedElapsed)
+                .coerceAtLeast(0L)
+
+        val differenceMillis =
+            actualMillis - timerDurationMillis
+
+        mainHandler.removeCallbacks(timerTick)
+        mode = Mode.TIMER_FINISHED
+
+        hideAnalysisDetails()
+
+        timerControls?.visibility = View.GONE
+        timerStartView?.visibility = View.GONE
+        timerFinishView?.visibility = View.GONE
+        timerActionView?.apply {
+            text = "▶ REANUDAR ANÁLISIS"
+            visibility = View.VISIBLE
+        }
+
+        hourlyView?.text =
+            "✓ Viaje finalizado"
+        hourlyView?.setTextColor(
+            Color.rgb(80, 220, 120)
+        )
+
+        val toleranceMillis = 1_000L
+
+        when {
+            differenceMillis < -toleranceMillis -> {
+                kmView?.text =
+                    "✓ ${
+                        formatDuration(
+                            -differenceMillis,
+                            roundUp = false
+                        )
+                    } antes de lo estimado"
+                kmView?.setTextColor(
+                    Color.rgb(80, 220, 120)
+                )
+            }
+
+            differenceMillis > toleranceMillis -> {
+                kmView?.text =
+                    "+${
+                        formatDuration(
+                            differenceMillis,
+                            roundUp = false
+                        )
+                    } sobre el tiempo estimado"
+                kmView?.setTextColor(
+                    Color.rgb(255, 204, 0)
+                )
+            }
+
+            else -> {
+                kmView?.text =
+                    "En tiempo"
+                kmView?.setTextColor(
+                    Color.rgb(125, 211, 252)
+                )
+            }
+        }
+
+        detailsView?.setTextColor(
+            Color.LTGRAY
+        )
+        detailsView?.text =
+            "Estimado ${
+                formatDuration(
+                    timerDurationMillis,
+                    roundUp = false
+                )
+            } · Real ${
+                formatDuration(
+                    actualMillis,
+                    roundUp = false
+                )
+            }"
+    }
+
     private fun resumeAnalysis() {
         when (mode) {
             Mode.ANALYZING -> Unit
@@ -490,11 +590,13 @@ class OverlayController(
                 showWaiting()
             }
 
-            Mode.TIMER_RUNNING -> {
+            Mode.TIMER_RUNNING,
+            Mode.TIMER_FINISHED -> {
                 /*
                  * MediaProjection was intentionally stopped when the timer
                  * started. Ask the service to open Android's capture-consent
-                 * flow. Keep the timer running until permission is granted.
+                 * flow. If the trip was already finalized, the frozen summary
+                 * remains visible until permission is granted.
                  */
                 onResumeAnalysisRequested()
             }
@@ -506,7 +608,10 @@ class OverlayController(
      * MediaProjection session and the VirtualDisplay was recreated.
      */
     fun onProjectionResumed() {
-        if (mode != Mode.TIMER_RUNNING) return
+        if (
+            mode != Mode.TIMER_RUNNING &&
+            mode != Mode.TIMER_FINISHED
+        ) return
 
         mainHandler.removeCallbacks(timerTick)
         mode = Mode.ANALYZING
@@ -540,6 +645,7 @@ class OverlayController(
     private fun hideTimerControls() {
         timerControls?.visibility = View.GONE
         timerStartView?.visibility = View.GONE
+        timerFinishView?.visibility = View.GONE
         timerActionView?.visibility = View.GONE
     }
 
