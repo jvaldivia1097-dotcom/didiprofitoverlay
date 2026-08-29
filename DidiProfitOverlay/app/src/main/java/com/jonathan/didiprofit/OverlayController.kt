@@ -23,6 +23,8 @@ import kotlin.math.hypot
 class OverlayController(
     private val context: Context,
     private val onAnalysisPausedChanged: (Boolean) -> Unit = {},
+    private val onTimerStarted: () -> Unit = {},
+    private val onResumeAnalysisRequested: () -> Unit = {},
     private val onStopRequested: () -> Unit = {}
 ) {
     private enum class Mode {
@@ -379,6 +381,13 @@ class OverlayController(
 
         mode = Mode.TIMER_RUNNING
 
+        /*
+         * V3.6.2: once the countdown actually starts, the service
+         * releases MediaProjection completely. The timer itself keeps
+         * running inside this overlay.
+         */
+        onTimerStarted()
+
         timerControls?.visibility = View.GONE
         timerStartView?.visibility = View.GONE
         timerActionView?.apply {
@@ -465,19 +474,52 @@ class OverlayController(
     }
 
     private fun resumeAnalysis() {
-        if (mode == Mode.ANALYZING) return
+        when (mode) {
+            Mode.ANALYZING -> Unit
+
+            Mode.TIMER_SETUP -> {
+                /*
+                 * The countdown never started, so MediaProjection is still
+                 * alive. Cancel can return immediately without asking for
+                 * screen-capture permission again.
+                 */
+                mainHandler.removeCallbacks(timerTick)
+                mode = Mode.ANALYZING
+                onAnalysisPausedChanged(false)
+                resetTimerState()
+                showWaiting()
+            }
+
+            Mode.TIMER_RUNNING -> {
+                /*
+                 * MediaProjection was intentionally stopped when the timer
+                 * started. Ask the service to open Android's capture-consent
+                 * flow. Keep the timer running until permission is granted.
+                 */
+                onResumeAnalysisRequested()
+            }
+        }
+    }
+
+    /**
+     * Called by CaptureService only after Android granted a NEW
+     * MediaProjection session and the VirtualDisplay was recreated.
+     */
+    fun onProjectionResumed() {
+        if (mode != Mode.TIMER_RUNNING) return
 
         mainHandler.removeCallbacks(timerTick)
-
         mode = Mode.ANALYZING
         onAnalysisPausedChanged(false)
+        resetTimerState()
+        showWaiting()
+    }
 
+    private fun resetTimerState() {
         timerStartedElapsed = 0L
         timerEndElapsed = 0L
         timerFinishWallMillis = 0L
         timerDurationMillis = 0L
-
-        showWaiting()
     }
 
     private fun hideAnalysisDetails() {

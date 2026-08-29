@@ -76,29 +76,67 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (
-            requestCode == REQUEST_CAPTURE &&
-            resultCode == RESULT_OK &&
-            data != null
+            requestCode == REQUEST_CAPTURE ||
+            requestCode == REQUEST_CAPTURE_TIMER_RESUME
         ) {
-            OverlayController.removeAnyOverlay(this)
-            AnalysisResumeState.clear(this)
+            val wasTimerResume =
+                requestCode == REQUEST_CAPTURE_TIMER_RESUME
 
-            val service = Intent(this, CaptureService::class.java).apply {
-                putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
-                putExtra(CaptureService.EXTRA_RESULT_DATA, data)
+            if (
+                resultCode == RESULT_OK &&
+                data != null
+            ) {
+                /*
+                 * During timer resume, the existing overlay must stay attached:
+                 * it owns the running countdown until CaptureService confirms
+                 * that a new MediaProjection session is ready.
+                 */
+                if (!wasTimerResume) {
+                    OverlayController.removeAnyOverlay(this)
+                }
+
+                AnalysisResumeState.clear(this)
+
+                val service = Intent(
+                    this,
+                    CaptureService::class.java
+                ).apply {
+                    putExtra(
+                        CaptureService.EXTRA_RESULT_CODE,
+                        resultCode
+                    )
+                    putExtra(
+                        CaptureService.EXTRA_RESULT_DATA,
+                        data
+                    )
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(service)
+                } else {
+                    startService(service)
+                }
+
+                Toast.makeText(
+                    this,
+                    if (wasTimerResume) {
+                        "Análisis reanudado"
+                    } else {
+                        "Análisis iniciado. Abre DiDi Conductor."
+                    },
+                    Toast.LENGTH_SHORT
+                ).show()
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(service)
-            } else {
-                startService(service)
+            /*
+             * This Activity was opened from the overlay only to request a new
+             * capture grant. Returning immediately puts DiDi back in front.
+             * If permission was cancelled, the timer continues unchanged.
+             */
+            if (wasTimerResume) {
+                finish()
+                return
             }
-
-            Toast.makeText(
-                this,
-                "Análisis iniciado. Abre DiDi Conductor.",
-                Toast.LENGTH_LONG
-            ).show()
         }
 
         updateStatus()
@@ -136,7 +174,7 @@ class MainActivity : Activity() {
         headerText.addView(
             AppUi.body(
                 this,
-                "V3.6.1 · Análisis, historial y Pon Tu Precio",
+                "V3.6.2 · Análisis, historial y Pon Tu Precio",
                 12.5f
             ).apply {
                 setPadding(0, AppUi.dp(this@MainActivity, 3), 0, 0)
@@ -515,13 +553,30 @@ class MainActivity : Activity() {
 
     private fun handleResumeIntentIfNeeded(intent: Intent?) {
         if (handledResumeIntent) return
-        if (intent?.action != AnalysisResumeState.ACTION_RESUME_ANALYSIS) return
 
-        handledResumeIntent = true
-        intent.action = null
+        when (intent?.action) {
+            CaptureService.ACTION_RESUME_FROM_TIMER -> {
+                handledResumeIntent = true
+                intent.action = null
 
-        if (AnalysisResumeState.isPending(this)) {
-            startAnalysisFlow()
+                /*
+                 * Keep the timer overlay visible while Android asks for a new
+                 * screen-capture grant.
+                 */
+                startAnalysisFlow(
+                    removeExistingOverlay = false,
+                    requestCode = REQUEST_CAPTURE_TIMER_RESUME
+                )
+            }
+
+            AnalysisResumeState.ACTION_RESUME_ANALYSIS -> {
+                handledResumeIntent = true
+                intent.action = null
+
+                if (AnalysisResumeState.isPending(this)) {
+                    startAnalysisFlow()
+                }
+            }
         }
     }
 
@@ -544,7 +599,10 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun startAnalysisFlow() {
+    private fun startAnalysisFlow(
+        removeExistingOverlay: Boolean = true,
+        requestCode: Int = REQUEST_CAPTURE
+    ) {
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(
                 this,
@@ -555,14 +613,16 @@ class MainActivity : Activity() {
             return
         }
 
-        OverlayController.removeAnyOverlay(this)
+        if (removeExistingOverlay) {
+            OverlayController.removeAnyOverlay(this)
+        }
 
         val manager =
             getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         startActivityForResult(
             manager.createScreenCaptureIntent(),
-            REQUEST_CAPTURE
+            requestCode
         )
     }
 
@@ -589,5 +649,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_CAPTURE = 1001
+        private const val REQUEST_CAPTURE_TIMER_RESUME = 1002
     }
 }

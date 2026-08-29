@@ -43,6 +43,7 @@ class CaptureService : Service() {
     @Volatile private var isStopping = false
     @Volatile private var explicitStopRequested = false
     @Volatile private var analysisPaused = false
+    private var projectionStoppedForTimer: MediaProjection? = null
     private var lastFrameAt = 0L
     private var lastOfferAt = 0L
     private val historyCandidateTracker = HistoryCandidateTracker()
@@ -62,6 +63,12 @@ class CaptureService : Service() {
             context = this,
             onAnalysisPausedChanged = { paused ->
                 setAnalysisPaused(paused)
+            },
+            onTimerStarted = {
+                stopProjectionForTimer()
+            },
+            onResumeAnalysisRequested = {
+                requestProjectionPermissionFromTimer()
             },
             onStopRequested = {
                 requestStop(userInitiated = true)
@@ -157,6 +164,69 @@ class CaptureService : Service() {
         }
     }
 
+    /**
+     * V3.6.2: completely releases the screen-capture session once the
+     * countdown starts. The foreground service and overlay remain alive so
+     * the timer can keep running without any screen capture or OCR.
+     */
+    private fun stopProjectionForTimer() {
+        if (isStopping) return
+
+        analysisPaused = true
+        historyCandidateTracker.reset()
+
+        synchronized(pendingLock) {
+            pendingImage?.close()
+            pendingImage = null
+            pendingDrainScheduled = false
+        }
+
+        workerHandler?.removeCallbacksAndMessages(null)
+
+        imageReader?.setOnImageAvailableListener(null, null)
+
+        virtualDisplay?.release()
+        virtualDisplay = null
+
+        imageReader?.close()
+        imageReader = null
+
+        val projection = mediaProjection
+        mediaProjection = null
+
+        if (projection != null) {
+            projectionStoppedForTimer = projection
+            runCatching {
+                projection.stop()
+            }
+        }
+    }
+
+    /**
+     * Triggered by the visible overlay button, so the user can grant a fresh
+     * MediaProjection session. Android requires confirmation again after a
+     * projection has been stopped.
+     */
+    private fun requestProjectionPermissionFromTimer() {
+        if (isStopping) return
+
+        val intent = Intent(
+            this,
+            MainActivity::class.java
+        ).apply {
+            action = ACTION_RESUME_FROM_TIMER
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+        }
+
+        runCatching {
+            startActivity(intent)
+        }
+    }
+
     private fun startProjection(resultCode: Int, data: Intent) {
         if (isStopping) return
         overlay.showWaiting()
@@ -170,6 +240,10 @@ class CaptureService : Service() {
 
         projection.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
+                if (projectionStoppedForTimer === projection) {
+                    projectionStoppedForTimer = null
+                    return
+                }
                 handleProjectionStoppedBySystem()
             }
         }, mainHandler)
@@ -183,8 +257,14 @@ class CaptureService : Service() {
             resources.displayMetrics.run { widthPixels to heightPixels }
         }
 
-        workerThread = HandlerThread("didi-ocr").also { it.start() }
-        workerHandler = Handler(workerThread!!.looper)
+        if (workerThread?.isAlive != true) {
+            workerThread = HandlerThread("didi-ocr").also {
+                it.start()
+            }
+            workerHandler = Handler(workerThread!!.looper)
+        } else if (workerHandler == null) {
+            workerHandler = Handler(workerThread!!.looper)
+        }
 
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also { reader ->
             reader.setOnImageAvailableListener({ source ->
@@ -207,6 +287,13 @@ class CaptureService : Service() {
             null,
             workerHandler
         )
+
+        /*
+         * If this projection was requested from the running timer, only now
+         * switch the overlay back to analysis. This keeps the timer alive if
+         * the user cancels Android's capture dialog.
+         */
+        overlay.onProjectionResumed()
     }
 
     private fun handleProjectionStoppedBySystem() {
@@ -590,6 +677,8 @@ class CaptureService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.jonathan.didiprofit.STOP"
+        const val ACTION_RESUME_FROM_TIMER =
+            "com.jonathan.didiprofit.RESUME_FROM_TIMER"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         private const val CHANNEL_ID = "didi_profit_capture"
