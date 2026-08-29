@@ -5,6 +5,9 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -19,9 +22,18 @@ import kotlin.math.hypot
 
 class OverlayController(
     private val context: Context,
+    private val onAnalysisPausedChanged: (Boolean) -> Unit = {},
     private val onStopRequested: () -> Unit = {}
 ) {
+    private enum class Mode {
+        ANALYZING,
+        TIMER_SETUP,
+        TIMER_RUNNING
+    }
+
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private var root: LinearLayout? = null
     private var hourlyView: TextView? = null
     private var kmView: TextView? = null
@@ -30,13 +42,38 @@ class OverlayController(
     private var finishEstimateView: TextView? = null
     private var suggestionsTitleView: TextView? = null
     private var suggestionsView: TextView? = null
+
+    private var timerControls: LinearLayout? = null
+    private var timerMinusView: TextView? = null
+    private var timerMinutesView: TextView? = null
+    private var timerPlusView: TextView? = null
+    private var timerStartView: TextView? = null
+    private var timerActionView: TextView? = null
+
     private var stopTarget: TextView? = null
     private var insideStopZone = false
+
+    private var mode = Mode.ANALYZING
+    private var lastOfferMinutes: Int? = null
+    private var selectedTimerMinutes = DEFAULT_TIMER_MINUTES
+    private var timerStartedElapsed = 0L
+    private var timerEndElapsed = 0L
+    private var timerFinishWallMillis = 0L
+    private var timerDurationMillis = 0L
+
+    private val timerTick = object : Runnable {
+        override fun run() {
+            if (mode != Mode.TIMER_RUNNING || root == null) return
+            updateTimerDisplay()
+            mainHandler.postDelayed(this, TIMER_TICK_MS)
+        }
+    }
 
     private val density get() = context.resources.displayMetrics.density
     private fun dp(v: Int) = (v * density).toInt()
 
     fun showWaiting() {
+        if (mode != Mode.ANALYZING) return
         ensureCreated()
         hourlyView?.text = "Analizando DiDi…"
         hourlyView?.setTextColor(Color.WHITE)
@@ -49,10 +86,16 @@ class OverlayController(
         suggestionsTitleView?.visibility = View.GONE
         suggestionsView?.visibility = View.GONE
         suggestionsView?.text = ""
+        hideTimerControls()
     }
 
     fun showOffer(offer: RideOffer, thresholds: Thresholds) {
+        if (mode != Mode.ANALYZING) return
         ensureCreated()
+        lastOfferMinutes = offer.totalMinutes.coerceIn(
+            MIN_TIMER_MINUTES,
+            MAX_TIMER_MINUTES
+        )
         hourlyView?.text = String.format(Locale.US, "$%.0f/h", offer.pesosPerHour)
         hourlyView?.setTextColor(
             scoreColor(
@@ -99,9 +142,11 @@ class OverlayController(
             suggestionLine(offer, thresholds.targetHourly2),
             suggestionLine(offer, thresholds.targetHourly3)
         ).joinToString("\n")
+        hideTimerControls()
     }
 
     fun remove() {
+        mainHandler.removeCallbacks(timerTick)
         hideStopTarget()
         val view = root
         if (view != null) {
@@ -116,6 +161,12 @@ class OverlayController(
         finishEstimateView = null
         suggestionsTitleView = null
         suggestionsView = null
+        timerControls = null
+        timerMinusView = null
+        timerMinutesView = null
+        timerPlusView = null
+        timerStartView = null
+        timerActionView = null
     }
 
     private fun ensureCreated() {
@@ -174,6 +225,49 @@ class OverlayController(
             visibility = View.GONE
         }
 
+        timerMinusView = timerAdjustButton("−") {
+            adjustTimerMinutes(-1)
+        }
+        timerMinutesView = TextView(context).apply {
+            textSize = 18f
+            gravity = Gravity.CENTER
+            minWidth = dp(92)
+            minHeight = dp(44)
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        timerPlusView = timerAdjustButton("+") {
+            adjustTimerMinutes(1)
+        }
+
+        timerControls = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+            visibility = View.GONE
+            addView(timerMinusView)
+            addView(timerMinutesView)
+            addView(timerPlusView)
+        }
+
+        timerStartView = actionButton(
+            "▶ COMENZAR",
+            primary = true
+        ) {
+            startTimer()
+        }.apply {
+            visibility = View.GONE
+        }
+
+        timerActionView = actionButton(
+            "Cancelar",
+            primary = false
+        ) {
+            resumeAnalysis()
+        }.apply {
+            visibility = View.GONE
+        }
+
         container.addView(hourlyView)
         container.addView(kmView)
         container.addView(detailsView)
@@ -181,6 +275,9 @@ class OverlayController(
         container.addView(finishEstimateView)
         container.addView(suggestionsTitleView)
         container.addView(suggestionsView)
+        container.addView(timerControls)
+        container.addView(timerStartView)
+        container.addView(timerActionView)
 
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -201,6 +298,361 @@ class OverlayController(
         registerOverlay(windowManager, container)
     }
 
+    private fun enterTimerSetup() {
+        if (mode != Mode.ANALYZING) return
+
+        ensureCreated()
+        mainHandler.removeCallbacks(timerTick)
+
+        mode = Mode.TIMER_SETUP
+        onAnalysisPausedChanged(true)
+
+        selectedTimerMinutes = (
+            lastOfferMinutes ?: DEFAULT_TIMER_MINUTES
+        ).coerceIn(
+            MIN_TIMER_MINUTES,
+            MAX_TIMER_MINUTES
+        )
+
+        hourlyView?.text = "⏱ Temporizador de viaje"
+        hourlyView?.setTextColor(Color.WHITE)
+
+        kmView?.text = "Ajusta el tiempo total"
+        kmView?.setTextColor(Color.LTGRAY)
+
+        detailsView?.setTextColor(Color.LTGRAY)
+        detailsView?.text =
+            lastOfferMinutes?.let {
+                "Precargado de la última propuesta: $it min"
+            } ?: "Tiempo inicial: $DEFAULT_TIMER_MINUTES min"
+
+        hideAnalysisDetails()
+
+        timerControls?.visibility = View.VISIBLE
+        timerStartView?.visibility = View.VISIBLE
+        timerActionView?.apply {
+            text = "Cancelar"
+            visibility = View.VISIBLE
+        }
+
+        updateTimerMinutesText()
+        root?.performHapticFeedback(
+            HapticFeedbackConstants.CONTEXT_CLICK
+        )
+    }
+
+    private fun adjustTimerMinutes(delta: Int) {
+        if (mode != Mode.TIMER_SETUP) return
+
+        selectedTimerMinutes =
+            (selectedTimerMinutes + delta).coerceIn(
+                MIN_TIMER_MINUTES,
+                MAX_TIMER_MINUTES
+            )
+
+        updateTimerMinutesText()
+    }
+
+    private fun updateTimerMinutesText() {
+        timerMinutesView?.text =
+            "$selectedTimerMinutes min"
+    }
+
+    private fun startTimer() {
+        if (mode != Mode.TIMER_SETUP) return
+
+        val nowElapsed =
+            SystemClock.elapsedRealtime()
+
+        timerDurationMillis =
+            selectedTimerMinutes * 60_000L
+
+        timerStartedElapsed =
+            nowElapsed
+
+        timerEndElapsed =
+            nowElapsed + timerDurationMillis
+
+        timerFinishWallMillis =
+            System.currentTimeMillis() +
+                timerDurationMillis
+
+        mode = Mode.TIMER_RUNNING
+
+        timerControls?.visibility = View.GONE
+        timerStartView?.visibility = View.GONE
+        timerActionView?.apply {
+            text = "▶ REANUDAR ANÁLISIS"
+            visibility = View.VISIBLE
+        }
+
+        updateTimerDisplay()
+        mainHandler.removeCallbacks(timerTick)
+        mainHandler.postDelayed(
+            timerTick,
+            TIMER_TICK_MS
+        )
+    }
+
+    private fun updateTimerDisplay() {
+        if (mode != Mode.TIMER_RUNNING) return
+
+        val nowElapsed =
+            SystemClock.elapsedRealtime()
+
+        val remaining =
+            timerEndElapsed - nowElapsed
+
+        val finishText =
+            DateFormat.getTimeFormat(context)
+                .format(
+                    Date(timerFinishWallMillis)
+                )
+
+        hideAnalysisDetails()
+
+        timerControls?.visibility = View.GONE
+        timerStartView?.visibility = View.GONE
+        timerActionView?.visibility = View.VISIBLE
+
+        if (remaining > 0L) {
+            hourlyView?.text =
+                "⏱ ${formatDuration(remaining, roundUp = true)} restantes"
+            hourlyView?.setTextColor(Color.WHITE)
+
+            kmView?.text =
+                "Fin aprox. $finishText"
+            kmView?.setTextColor(
+                Color.rgb(125, 211, 252)
+            )
+
+            detailsView?.setTextColor(
+                Color.LTGRAY
+            )
+            detailsView?.text =
+                "Tiempo estimado: $selectedTimerMinutes min"
+        } else {
+            val extra =
+                (nowElapsed - timerEndElapsed)
+                    .coerceAtLeast(0L)
+
+            val total =
+                timerDurationMillis + extra
+
+            hourlyView?.text =
+                "⏱ +${formatDuration(extra, roundUp = false)}"
+            hourlyView?.setTextColor(
+                Color.rgb(255, 204, 0)
+            )
+
+            kmView?.text =
+                "Tiempo adicional"
+            kmView?.setTextColor(
+                Color.rgb(255, 204, 0)
+            )
+
+            detailsView?.setTextColor(
+                Color.LTGRAY
+            )
+            detailsView?.text =
+                "Fin estimado: $finishText · Total ${
+                    formatDuration(
+                        total,
+                        roundUp = false
+                    )
+                }"
+        }
+    }
+
+    private fun resumeAnalysis() {
+        if (mode == Mode.ANALYZING) return
+
+        mainHandler.removeCallbacks(timerTick)
+
+        mode = Mode.ANALYZING
+        onAnalysisPausedChanged(false)
+
+        timerStartedElapsed = 0L
+        timerEndElapsed = 0L
+        timerFinishWallMillis = 0L
+        timerDurationMillis = 0L
+
+        showWaiting()
+    }
+
+    private fun hideAnalysisDetails() {
+        scoreView?.visibility = View.GONE
+
+        finishEstimateView?.visibility =
+            View.GONE
+        finishEstimateView?.text = ""
+
+        suggestionsTitleView?.visibility =
+            View.GONE
+
+        suggestionsView?.visibility =
+            View.GONE
+        suggestionsView?.text = ""
+    }
+
+    private fun hideTimerControls() {
+        timerControls?.visibility = View.GONE
+        timerStartView?.visibility = View.GONE
+        timerActionView?.visibility = View.GONE
+    }
+
+    private fun timerAdjustButton(
+        label: String,
+        onClick: () -> Unit
+    ): TextView =
+        TextView(context).apply {
+            text = label
+            textSize = 22f
+            gravity = Gravity.CENTER
+            minWidth = dp(48)
+            minHeight = dp(44)
+            setTextColor(Color.WHITE)
+            setTypeface(
+                typeface,
+                android.graphics.Typeface.BOLD
+            )
+            background =
+                GradientDrawable().apply {
+                    cornerRadius =
+                        dp(9).toFloat()
+                    setColor(
+                        Color.argb(
+                            230,
+                            62,
+                            62,
+                            62
+                        )
+                    )
+                    setStroke(
+                        dp(1),
+                        Color.argb(
+                            100,
+                            255,
+                            255,
+                            255
+                        )
+                    )
+                }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                onClick()
+            }
+        }
+
+    private fun actionButton(
+        label: String,
+        primary: Boolean,
+        onClick: () -> Unit
+    ): TextView =
+        TextView(context).apply {
+            text = label
+            textSize = 13f
+            gravity = Gravity.CENTER
+            minHeight = dp(44)
+            setPadding(
+                dp(12),
+                dp(8),
+                dp(12),
+                dp(8)
+            )
+            setTextColor(Color.WHITE)
+            setTypeface(
+                typeface,
+                android.graphics.Typeface.BOLD
+            )
+            background =
+                GradientDrawable().apply {
+                    cornerRadius =
+                        dp(9).toFloat()
+                    setColor(
+                        if (primary) {
+                            Color.argb(
+                                245,
+                                42,
+                                130,
+                                70
+                            )
+                        } else {
+                            Color.argb(
+                                230,
+                                62,
+                                62,
+                                62
+                            )
+                        }
+                    )
+                    setStroke(
+                        dp(1),
+                        Color.argb(
+                            100,
+                            255,
+                            255,
+                            255
+                        )
+                    )
+                }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                onClick()
+            }
+
+            layoutParams =
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(7)
+                }
+        }
+
+    private fun formatDuration(
+        milliseconds: Long,
+        roundUp: Boolean
+    ): String {
+        val safe =
+            milliseconds.coerceAtLeast(0L)
+
+        val seconds =
+            if (roundUp) {
+                (safe + 999L) / 1000L
+            } else {
+                safe / 1000L
+            }
+
+        val hours =
+            seconds / 3600L
+
+        val minutes =
+            (seconds % 3600L) / 60L
+
+        val secs =
+            seconds % 60L
+
+        return if (hours > 0L) {
+            String.format(
+                Locale.US,
+                "%d:%02d:%02d",
+                hours,
+                minutes,
+                secs
+            )
+        } else {
+            String.format(
+                Locale.US,
+                "%02d:%02d",
+                minutes,
+                secs
+            )
+        }
+    }
+
     private fun suggestionLine(offer: RideOffer, targetHourly: Double): String {
         val requiredFare = offer.minimumFareForHourly(targetHourly)
         val delta = requiredFare - offer.fare
@@ -215,15 +667,24 @@ class OverlayController(
         return String.format(Locale.US, "%s/h → $%.2f%s", targetText, requiredFare, suffix)
     }
 
-    private fun makeDraggable(view: View, lp: WindowManager.LayoutParams) {
+    private fun makeDraggable(
+        view: View,
+        lp: WindowManager.LayoutParams
+    ) {
         var startX = 0
         var startY = 0
         var touchX = 0f
         var touchY = 0f
         var dragging = false
-        val dragThreshold = dp(8).toFloat()
+        var lastTapUpAt = 0L
 
-        view.setOnTouchListener { _, event ->
+        val dragThreshold =
+            dp(8).toFloat()
+
+        view.setOnTouchListener {
+                _,
+                event ->
+
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = lp.x
@@ -236,55 +697,118 @@ class OverlayController(
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - touchX
-                    val dy = event.rawY - touchY
+                    val dx =
+                        event.rawX - touchX
+                    val dy =
+                        event.rawY - touchY
 
-                    if (!dragging &&
-                        hypot(dx.toDouble(), dy.toDouble()) >= dragThreshold
+                    if (
+                        !dragging &&
+                        hypot(
+                            dx.toDouble(),
+                            dy.toDouble()
+                        ) >= dragThreshold
                     ) {
                         dragging = true
+                        lastTapUpAt = 0L
                         showStopTarget()
                     }
 
                     if (dragging) {
-                        lp.x = (startX - dx).toInt().coerceAtLeast(0)
-                        lp.y = (startY + dy).toInt().coerceAtLeast(0)
-                        runCatching { windowManager.updateViewLayout(view, lp) }
+                        lp.x =
+                            (startX - dx)
+                                .toInt()
+                                .coerceAtLeast(0)
 
-                        val nowInside = isInsideStopZone(event.rawX, event.rawY)
-                        if (nowInside != insideStopZone) {
-                            insideStopZone = nowInside
-                            setStopTargetActive(nowInside)
+                        lp.y =
+                            (startY + dy)
+                                .toInt()
+                                .coerceAtLeast(0)
+
+                        runCatching {
+                            windowManager.updateViewLayout(
+                                view,
+                                lp
+                            )
+                        }
+
+                        val nowInside =
+                            isInsideStopZone(
+                                event.rawX,
+                                event.rawY
+                            )
+
+                        if (
+                            nowInside !=
+                            insideStopZone
+                        ) {
+                            insideStopZone =
+                                nowInside
+
+                            setStopTargetActive(
+                                nowInside
+                            )
+
                             if (nowInside) {
-                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                view.performHapticFeedback(
+                                    HapticFeedbackConstants.LONG_PRESS
+                                )
                             }
                         }
                     }
+
                     true
                 }
 
                 MotionEvent.ACTION_UP -> {
+                    val wasDragging =
+                        dragging
+
                     val shouldStop =
-                        dragging && isInsideStopZone(event.rawX, event.rawY)
+                        dragging &&
+                            isInsideStopZone(
+                                event.rawX,
+                                event.rawY
+                            )
 
                     hideStopTarget()
                     dragging = false
-                                insideStopZone = false
+                    insideStopZone = false
 
                     if (shouldStop) {
-                        view.visibility = View.GONE
+                        view.visibility =
+                            View.GONE
+
                         view.post {
                             remove()
                             onStopRequested()
                         }
+                    } else if (
+                        !wasDragging &&
+                        mode == Mode.ANALYZING
+                    ) {
+                        val now =
+                            SystemClock.uptimeMillis()
+
+                        if (
+                            lastTapUpAt > 0L &&
+                            now - lastTapUpAt <=
+                            DOUBLE_TAP_TIMEOUT_MS
+                        ) {
+                            lastTapUpAt = 0L
+                            enterTimerSetup()
+                        } else {
+                            lastTapUpAt = now
+                        }
                     }
+
                     true
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
                     hideStopTarget()
                     dragging = false
-                                insideStopZone = false
+                    insideStopZone = false
                     true
                 }
 
@@ -393,6 +917,11 @@ class OverlayController(
         private const val STOP_TARGET_SIZE_DP = 82
         private const val STOP_TARGET_RIGHT_MARGIN_DP = 22
         private const val STOP_TARGET_BOTTOM_MARGIN_DP = 86
+        private const val DOUBLE_TAP_TIMEOUT_MS = 420L
+        private const val TIMER_TICK_MS = 250L
+        private const val DEFAULT_TIMER_MINUTES = 10
+        private const val MIN_TIMER_MINUTES = 1
+        private const val MAX_TIMER_MINUTES = 360
 
         @Volatile
         private var registeredView: View? = null

@@ -42,6 +42,7 @@ class CaptureService : Service() {
 
     @Volatile private var isStopping = false
     @Volatile private var explicitStopRequested = false
+    @Volatile private var analysisPaused = false
     private var lastFrameAt = 0L
     private var lastOfferAt = 0L
     private val historyCandidateTracker = HistoryCandidateTracker()
@@ -57,7 +58,15 @@ class CaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         OverlayController.removeAnyOverlay(this)
-        overlay = OverlayController(this) { requestStop(userInitiated = true) }
+        overlay = OverlayController(
+            context = this,
+            onAnalysisPausedChanged = { paused ->
+                setAnalysisPaused(paused)
+            },
+            onStopRequested = {
+                requestStop(userInitiated = true)
+            }
+        )
         preferences = ProfitPreferences(this)
         history = HistoryRepository(this)
         createNotificationChannel()
@@ -104,6 +113,7 @@ class CaptureService : Service() {
         }
 
         isStopping = true
+        analysisPaused = true
         mainHandler.removeCallbacksAndMessages(null)
         historyCandidateTracker.reset()
         if (::overlay.isInitialized) overlay.remove()
@@ -114,9 +124,36 @@ class CaptureService : Service() {
     }
 
     private fun postOverlay(action: () -> Unit) {
-        if (isStopping) return
+        if (isStopping || analysisPaused) return
+
         mainHandler.post {
-            if (!isStopping) action()
+            if (!isStopping && !analysisPaused) {
+                action()
+            }
+        }
+    }
+
+    /**
+     * V3.6.1:
+     * while the manual trip timer owns the overlay, OCR/history work is paused.
+     * This avoids navigation screens overwriting the timer and prevents
+     * accidental history records during an active timer.
+     */
+    private fun setAnalysisPaused(paused: Boolean) {
+        if (isStopping || analysisPaused == paused) return
+
+        analysisPaused = paused
+        historyCandidateTracker.reset()
+
+        synchronized(pendingLock) {
+            pendingImage?.close()
+            pendingImage = null
+            pendingDrainScheduled = false
+        }
+
+        if (!paused) {
+            lastFrameAt = 0L
+            lastOfferAt = 0L
         }
     }
 
@@ -152,7 +189,7 @@ class CaptureService : Service() {
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also { reader ->
             reader.setOnImageAvailableListener({ source ->
                 val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-                if (isStopping) {
+                if (isStopping || analysisPaused) {
                     image.close()
                 } else {
                     queueOrProcessImage(image)
@@ -193,7 +230,7 @@ class CaptureService : Service() {
     }
 
     private fun queueOrProcessImage(image: Image) {
-        if (isStopping) {
+        if (isStopping || analysisPaused) {
             image.close()
             return
         }
@@ -220,7 +257,7 @@ class CaptureService : Service() {
     }
 
     private fun schedulePendingDrain() {
-        if (isStopping) return
+        if (isStopping || analysisPaused) return
         val handler = workerHandler ?: return
         if (pendingDrainScheduled) return
 
@@ -231,12 +268,14 @@ class CaptureService : Service() {
         pendingDrainScheduled = true
         handler.postDelayed({
             pendingDrainScheduled = false
-            if (!isStopping) drainPendingImage()
+            if (!isStopping && !analysisPaused) {
+                drainPendingImage()
+            }
         }, delay)
     }
 
     private fun drainPendingImage() {
-        if (isStopping) return
+        if (isStopping || analysisPaused) return
         if (synchronized(pendingLock) { pendingImage == null }) return
 
         if (ocrBusy.get()) {
@@ -268,7 +307,7 @@ class CaptureService : Service() {
      * Successful offers normally need only the faster first pass.
      */
     private fun processImage(image: Image) {
-        if (isStopping) {
+        if (isStopping || analysisPaused) {
             image.close()
             return
         }
@@ -298,7 +337,7 @@ class CaptureService : Service() {
         fullBitmap: Bitmap,
         isPrimary: Boolean
     ) {
-        if (isStopping) {
+        if (isStopping || analysisPaused) {
             if (bitmap !== fullBitmap && !bitmap.isRecycled) bitmap.recycle()
             if (!fullBitmap.isRecycled) fullBitmap.recycle()
             finishOcr()
@@ -307,7 +346,7 @@ class CaptureService : Service() {
 
         recognizer.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { result ->
-                if (isStopping) {
+                if (isStopping || analysisPaused) {
                     if (bitmap !== fullBitmap && !bitmap.isRecycled) bitmap.recycle()
                     if (!fullBitmap.isRecycled) fullBitmap.recycle()
                     finishOcr()
@@ -336,7 +375,7 @@ class CaptureService : Service() {
             .addOnFailureListener {
                 if (bitmap !== fullBitmap && !bitmap.isRecycled) bitmap.recycle()
 
-                if (isPrimary && !isStopping) {
+                if (isPrimary && !isStopping && !analysisPaused) {
                     runRecognition(
                         bitmap = fullBitmap,
                         fullBitmap = fullBitmap,
@@ -418,7 +457,12 @@ class CaptureService : Service() {
 
     private fun finishOcr() {
         ocrBusy.set(false)
-        if (!isStopping) workerHandler?.post { drainPendingImage() }
+
+        if (!isStopping && !analysisPaused) {
+            workerHandler?.post {
+                drainPendingImage()
+            }
+        }
     }
 
     private fun isPlausible(offer: RideOffer): Boolean =
@@ -510,6 +554,7 @@ class CaptureService : Service() {
 
     override fun onDestroy() {
         isStopping = true
+        analysisPaused = true
         historyCandidateTracker.reset()
         mainHandler.removeCallbacksAndMessages(null)
 
