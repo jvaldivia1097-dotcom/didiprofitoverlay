@@ -1,0 +1,22 @@
+DiDi Rentabilidad V3.6.0 — paquete de reemplazo
+
+Este ZIP contiene únicamente los archivos que cambian respecto a V3.5.1.
+
+Reemplaza en tu repositorio los archivos respetando exactamente sus rutas:
+
+1. DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/OverlayController.kt
+2. DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/CaptureService.kt
+3. DidiProfitOverlay/app/build.gradle.kts
+4. .github/workflows/build-apk.yml
+5. DidiProfitOverlay/BUILD_NOTES.txt
+
+Después haz commit/push a main. El workflow Build Android APK se ejecutará automáticamente y el artefacto se llamará:
+DiDi-Rentabilidad-V3.6.0-APK
+
+Flujo del temporizador:
+- Analizando propuestas: doble toque al overlay.
+- El OCR y el historial se pausan automáticamente.
+- Ajusta minutos con − / + y pulsa COMENZAR.
+- Cuenta atrás hasta 00:00.
+- Si el viaje sigue, cambia a +00:01, +00:02... para medir el tiempo excedido.
+- Al terminar el viaje pulsa REANUDAR ANÁLISIS.

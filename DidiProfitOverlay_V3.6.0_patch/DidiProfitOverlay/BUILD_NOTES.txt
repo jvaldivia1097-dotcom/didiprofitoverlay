@@ -1,0 +1,15 @@
+DiDi Rentabilidad Overlay — V3.6.0
+
+Cambios principales:
+- Nuevo modo Temporizador de viaje mediante doble toque sobre el overlay.
+- Al entrar al temporizador se pausa realmente el análisis OCR y el guardado de historial.
+- Precarga automáticamente los minutos de la última propuesta detectada; si no hay una, usa 10 min.
+- Ajuste manual del tiempo con botones − / + antes de iniciar.
+- Cuenta regresiva con hora estimada de finalización.
+- Al llegar a 00:00 continúa automáticamente como cronómetro de tiempo excedido: +00:01, +00:02, etc.
+- Durante el excedente muestra Tiempo adicional, la hora estimada original y el tiempo total transcurrido.
+- Botón REANUDAR ANÁLISIS disponible durante todo el viaje para terminar el temporizador manualmente.
+- Al reanudar se reactiva OCR y vuelve a Esperando propuesta.
+- Se mantiene el cálculo "Fin aprox. si aceptas" en las propuestas.
+- Se mantiene el gesto de arrastrar el overlay y soltarlo en la X para detener el servicio.
+- Version 0.3.6.0 / versionCode 18.
