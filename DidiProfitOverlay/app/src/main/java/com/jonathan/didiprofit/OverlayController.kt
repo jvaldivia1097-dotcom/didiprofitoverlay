@@ -53,6 +53,7 @@ class OverlayController(
     private var timerStartView: TextView? = null
     private var timerFinishView: TextView? = null
     private var timerActionView: TextView? = null
+    private var timerCompactView: CircularTimerView? = null
 
     private var stopTarget: TextView? = null
     private var insideStopZone = false
@@ -64,6 +65,7 @@ class OverlayController(
     private var timerEndElapsed = 0L
     private var timerFinishWallMillis = 0L
     private var timerDurationMillis = 0L
+    private var timerExpanded = false
 
     private val timerTick = object : Runnable {
         override fun run() {
@@ -79,6 +81,7 @@ class OverlayController(
     fun showWaiting() {
         if (mode != Mode.ANALYZING) return
         ensureCreated()
+        prepareStandardPanel()
         hourlyView?.text = "Analizando DiDi…"
         hourlyView?.setTextColor(Color.WHITE)
         kmView?.text = "Esperando propuesta"
@@ -96,6 +99,7 @@ class OverlayController(
     fun showOffer(offer: RideOffer, thresholds: Thresholds) {
         if (mode != Mode.ANALYZING) return
         ensureCreated()
+        prepareStandardPanel()
         lastOfferMinutes = offer.totalMinutes.coerceIn(
             MIN_TIMER_MINUTES,
             MAX_TIMER_MINUTES
@@ -172,6 +176,7 @@ class OverlayController(
         timerStartView = null
         timerFinishView = null
         timerActionView = null
+        timerCompactView = null
     }
 
     private fun ensureCreated() {
@@ -268,9 +273,74 @@ class OverlayController(
             "■ FINALIZAR VIAJE",
             primary = true
         ) {
-            finishTrip()
+            // A normal tap intentionally does nothing.
         }.apply {
             visibility = View.GONE
+
+            var holdRunnable: Runnable? = null
+
+            setOnTouchListener {
+                    button,
+                    event ->
+
+                fun cancelHold() {
+                    holdRunnable?.let {
+                        mainHandler.removeCallbacks(it)
+                    }
+                    holdRunnable = null
+                    button.isPressed = false
+                }
+
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        button.isPressed = true
+
+                        val action =
+                            Runnable {
+                                holdRunnable = null
+
+                                if (
+                                    mode == Mode.TIMER_RUNNING &&
+                                    timerExpanded &&
+                                    button.isPressed
+                                ) {
+                                    button.performHapticFeedback(
+                                        HapticFeedbackConstants.LONG_PRESS
+                                    )
+                                    button.isPressed = false
+                                    finishTrip()
+                                }
+                            }
+
+                        holdRunnable = action
+                        mainHandler.postDelayed(
+                            action,
+                            FINISH_HOLD_MS
+                        )
+                        true
+                    }
+
+                    MotionEvent.ACTION_MOVE -> {
+                        if (
+                            event.x < 0f ||
+                            event.y < 0f ||
+                            event.x > button.width ||
+                            event.y > button.height
+                        ) {
+                            cancelHold()
+                        }
+                        true
+                    }
+
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL -> {
+                        cancelHold()
+                        true
+                    }
+
+                    else -> true
+                }
+            }
         }
 
         timerActionView = actionButton(
@@ -282,6 +352,18 @@ class OverlayController(
             visibility = View.GONE
         }
 
+        timerCompactView =
+            CircularTimerView(context).apply {
+                visibility = View.GONE
+                layoutParams =
+                    LinearLayout.LayoutParams(
+                        dp(COMPACT_TIMER_SIZE_DP),
+                        dp(COMPACT_TIMER_SIZE_DP)
+                    ).apply {
+                        gravity = Gravity.CENTER
+                    }
+            }
+
         container.addView(hourlyView)
         container.addView(kmView)
         container.addView(detailsView)
@@ -289,6 +371,7 @@ class OverlayController(
         container.addView(finishEstimateView)
         container.addView(suggestionsTitleView)
         container.addView(suggestionsView)
+        container.addView(timerCompactView)
         container.addView(timerControls)
         container.addView(timerStartView)
         container.addView(timerFinishView)
@@ -317,6 +400,7 @@ class OverlayController(
         if (mode != Mode.ANALYZING) return
 
         ensureCreated()
+        prepareStandardPanel()
         mainHandler.removeCallbacks(timerTick)
 
         mode = Mode.TIMER_SETUP
@@ -394,20 +478,17 @@ class OverlayController(
                 timerDurationMillis
 
         mode = Mode.TIMER_RUNNING
+        timerExpanded = false
 
         /*
-         * V3.6.2: once the countdown actually starts, the service
-         * releases MediaProjection completely. The timer itself keeps
-         * running inside this overlay.
+         * MediaProjection is fully released here, as in V3.6.2.
+         * V3.7 only changes the timer UI while the ride is running.
          */
         onTimerStarted()
 
-        timerControls?.visibility = View.GONE
-        timerStartView?.visibility = View.GONE
-        timerFinishView?.visibility = View.VISIBLE
-        timerActionView?.visibility = View.GONE
-
+        enterCompactTimerUi()
         updateTimerDisplay()
+
         mainHandler.removeCallbacks(timerTick)
         mainHandler.postDelayed(
             timerTick,
@@ -424,6 +505,62 @@ class OverlayController(
         val remaining =
             timerEndElapsed - nowElapsed
 
+        val elapsed =
+            (nowElapsed - timerStartedElapsed)
+                .coerceAtLeast(0L)
+
+        val progress =
+            if (timerDurationMillis > 0L) {
+                (
+                    elapsed.toDouble() /
+                        timerDurationMillis.toDouble()
+                    )
+                    .coerceIn(0.0, 1.0)
+                    .toFloat()
+            } else {
+                1f
+            }
+
+        if (remaining > 0L) {
+            timerCompactView?.setTimerState(
+                text =
+                    formatDuration(
+                        remaining,
+                        roundUp = true
+                    ),
+                progressFraction = progress,
+                isOvertime = false
+            )
+        } else {
+            val extra =
+                (nowElapsed - timerEndElapsed)
+                    .coerceAtLeast(0L)
+
+            timerCompactView?.setTimerState(
+                text =
+                    "+${
+                        formatDuration(
+                            extra,
+                            roundUp = false
+                        )
+                    }",
+                progressFraction = 1f,
+                isOvertime = true
+            )
+        }
+
+        if (!timerExpanded) return
+
+        updateExpandedTimerDisplay(
+            nowElapsed = nowElapsed,
+            remaining = remaining
+        )
+    }
+
+    private fun updateExpandedTimerDisplay(
+        nowElapsed: Long,
+        remaining: Long
+    ) {
         val finishText =
             DateFormat.getTimeFormat(context)
                 .format(
@@ -432,6 +569,11 @@ class OverlayController(
 
         hideAnalysisDetails()
 
+        hourlyView?.visibility = View.VISIBLE
+        kmView?.visibility = View.VISIBLE
+        detailsView?.visibility = View.VISIBLE
+
+        timerCompactView?.visibility = View.GONE
         timerControls?.visibility = View.GONE
         timerStartView?.visibility = View.GONE
         timerFinishView?.visibility = View.VISIBLE
@@ -439,11 +581,21 @@ class OverlayController(
 
         if (remaining > 0L) {
             hourlyView?.text =
-                "⏱ ${formatDuration(remaining, roundUp = true)} restantes"
+                "⏱ ${
+                    formatDuration(
+                        remaining,
+                        roundUp = true
+                    )
+                } restantes"
             hourlyView?.setTextColor(Color.WHITE)
 
             kmView?.text =
-                "Fin aprox. $finishText"
+                "Fin aprox. ${
+                    DateFormat.getTimeFormat(context)
+                        .format(
+                            Date(timerFinishWallMillis)
+                        )
+                }"
             kmView?.setTextColor(
                 Color.rgb(125, 211, 252)
             )
@@ -462,7 +614,12 @@ class OverlayController(
                 timerDurationMillis + extra
 
             hourlyView?.text =
-                "⏱ +${formatDuration(extra, roundUp = false)}"
+                "⏱ +${
+                    formatDuration(
+                        extra,
+                        roundUp = false
+                    )
+                }"
             hourlyView?.setTextColor(
                 Color.rgb(255, 204, 0)
             )
@@ -486,6 +643,62 @@ class OverlayController(
         }
     }
 
+    private fun enterCompactTimerUi() {
+        if (mode != Mode.TIMER_RUNNING) return
+
+        timerExpanded = false
+
+        root?.apply {
+            setPadding(0, 0, 0, 0)
+            background = null
+        }
+
+        hourlyView?.visibility = View.GONE
+        kmView?.visibility = View.GONE
+        detailsView?.visibility = View.GONE
+        scoreView?.visibility = View.GONE
+        finishEstimateView?.visibility = View.GONE
+        suggestionsTitleView?.visibility = View.GONE
+        suggestionsView?.visibility = View.GONE
+
+        timerControls?.visibility = View.GONE
+        timerStartView?.visibility = View.GONE
+        timerFinishView?.visibility = View.GONE
+        timerActionView?.visibility = View.GONE
+
+        timerCompactView?.visibility = View.VISIBLE
+    }
+
+    private fun expandTimerPanel() {
+        if (
+            mode != Mode.TIMER_RUNNING ||
+            timerExpanded
+        ) return
+
+        timerExpanded = true
+        restorePanelChrome()
+        timerCompactView?.visibility = View.GONE
+        updateTimerDisplay()
+
+        root?.performHapticFeedback(
+            HapticFeedbackConstants.CONTEXT_CLICK
+        )
+    }
+
+    private fun collapseTimerPanel() {
+        if (
+            mode != Mode.TIMER_RUNNING ||
+            !timerExpanded
+        ) return
+
+        enterCompactTimerUi()
+        updateTimerDisplay()
+
+        root?.performHapticFeedback(
+            HapticFeedbackConstants.CONTEXT_CLICK
+        )
+    }
+
     private fun finishTrip() {
         if (mode != Mode.TIMER_RUNNING) return
 
@@ -501,6 +714,13 @@ class OverlayController(
 
         mainHandler.removeCallbacks(timerTick)
         mode = Mode.TIMER_FINISHED
+        timerExpanded = true
+
+        restorePanelChrome()
+        timerCompactView?.visibility = View.GONE
+        hourlyView?.visibility = View.VISIBLE
+        kmView?.visibility = View.VISIBLE
+        detailsView?.visibility = View.VISIBLE
 
         hideAnalysisDetails()
 
@@ -625,6 +845,49 @@ class OverlayController(
         timerEndElapsed = 0L
         timerFinishWallMillis = 0L
         timerDurationMillis = 0L
+        timerExpanded = false
+    }
+
+    private fun prepareStandardPanel() {
+        timerExpanded = false
+        restorePanelChrome()
+        timerCompactView?.visibility = View.GONE
+        hourlyView?.visibility = View.VISIBLE
+        kmView?.visibility = View.VISIBLE
+        detailsView?.visibility = View.VISIBLE
+    }
+
+    private fun restorePanelChrome() {
+        root?.apply {
+            setPadding(
+                dp(12),
+                dp(8),
+                dp(12),
+                dp(8)
+            )
+            background =
+                GradientDrawable().apply {
+                    setColor(
+                        Color.argb(
+                            225,
+                            24,
+                            24,
+                            24
+                        )
+                    )
+                    cornerRadius =
+                        dp(12).toFloat()
+                    setStroke(
+                        dp(1),
+                        Color.argb(
+                            100,
+                            255,
+                            255,
+                            255
+                        )
+                    )
+                }
+        }
     }
 
     private fun hideAnalysisDetails() {
@@ -647,6 +910,7 @@ class OverlayController(
         timerStartView?.visibility = View.GONE
         timerFinishView?.visibility = View.GONE
         timerActionView?.visibility = View.GONE
+        timerCompactView?.visibility = View.GONE
     }
 
     private fun timerAdjustButton(
@@ -933,6 +1197,17 @@ class OverlayController(
                         }
                     } else if (
                         !wasDragging &&
+                        mode == Mode.TIMER_RUNNING
+                    ) {
+                        lastTapUpAt = 0L
+
+                        if (timerExpanded) {
+                            collapseTimerPanel()
+                        } else {
+                            expandTimerPanel()
+                        }
+                    } else if (
+                        !wasDragging &&
                         mode == Mode.ANALYZING
                     ) {
                         val now =
@@ -1067,6 +1342,8 @@ class OverlayController(
         private const val STOP_TARGET_BOTTOM_MARGIN_DP = 86
         private const val DOUBLE_TAP_TIMEOUT_MS = 420L
         private const val TIMER_TICK_MS = 250L
+        private const val FINISH_HOLD_MS = 900L
+        private const val COMPACT_TIMER_SIZE_DP = 96
         private const val DEFAULT_TIMER_MINUTES = 10
         private const val MIN_TIMER_MINUTES = 1
         private const val MAX_TIMER_MINUTES = 360
