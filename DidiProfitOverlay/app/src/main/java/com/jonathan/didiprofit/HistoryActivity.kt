@@ -49,6 +49,7 @@ class HistoryActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(AppUi.BG)
         }
+        AppUi.applyTopSystemInset(root)
 
         val scroll = ScrollView(this)
         content = LinearLayout(this).apply {

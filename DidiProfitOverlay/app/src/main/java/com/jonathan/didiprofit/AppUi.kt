@@ -232,6 +232,44 @@ object AppUi {
         setOnClickListener { onClick() }
     }
 
+    /**
+     * Android 15 / targetSdk 35 uses edge-to-edge by default.
+     * Add the status-bar inset to the top of a screen root so headers never
+     * render underneath the phone's clock/camera/status icons.
+     *
+     * Insets are returned unchanged so child views (notably bottomNav) can
+     * still consume their own navigation-bar inset.
+     */
+    fun applyTopSystemInset(view: View) {
+        val baseLeft = view.paddingLeft
+        val baseTop = view.paddingTop
+        val baseRight = view.paddingRight
+        val baseBottom = view.paddingBottom
+
+        view.setOnApplyWindowInsetsListener { target, insets ->
+            val statusTop =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    insets.getInsets(
+                        WindowInsets.Type.statusBars()
+                    ).top
+                } else {
+                    @Suppress("DEPRECATION")
+                    insets.systemWindowInsetTop
+                }
+
+            target.setPadding(
+                baseLeft,
+                baseTop + statusTop,
+                baseRight,
+                baseBottom
+            )
+
+            insets
+        }
+
+        view.requestApplyInsets()
+    }
+
     fun bottomNav(
         activity: Activity,
         selected: AppSection

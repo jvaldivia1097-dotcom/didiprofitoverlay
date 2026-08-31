@@ -29,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var statusTitle: TextView
     private lateinit var statusBody: TextView
     private lateinit var resumeButton: Button
+    private lateinit var overlayPermissionButton: Button
 
     private lateinit var todayHourly: TextView
     private lateinit var todayKm: TextView
@@ -147,6 +148,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(AppUi.BG)
         }
+        AppUi.applyTopSystemInset(root)
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -174,7 +176,7 @@ class MainActivity : Activity() {
         headerText.addView(
             AppUi.body(
                 this,
-                "V3.7.0 · Análisis, historial y Pon Tu Precio",
+                "V3.7.1 · Análisis, historial y Pon Tu Precio",
                 12.5f
             ).apply {
                 setPadding(0, AppUi.dp(this@MainActivity, 3), 0, 0)
@@ -352,10 +354,15 @@ class MainActivity : Activity() {
             AppUi.fullWidth(this, 0, 9)
         )
 
-        content.addView(
-            AppUi.secondaryButton(this, "▣  Permitir superposición") {
+        overlayPermissionButton =
+            AppUi.secondaryButton(
+                this,
+                "▣  Permitir superposición"
+            ) {
                 openOverlayPermission()
-            },
+            }
+        content.addView(
+            overlayPermissionButton,
             AppUi.fullWidth(this, 0, 9)
         )
 
@@ -494,6 +501,13 @@ class MainActivity : Activity() {
     }
 
     private fun updateStatus() {
+        val overlayAllowed =
+            Settings.canDrawOverlays(this)
+
+        overlayPermissionButton.visibility =
+            if (overlayAllowed) View.GONE
+            else View.VISIBLE
+
         val pending = AnalysisResumeState.isPending(this)
         resumeButton.visibility = if (pending) View.VISIBLE else View.GONE
 
@@ -517,7 +531,7 @@ class MainActivity : Activity() {
                     }
             }
 
-            Settings.canDrawOverlays(this) -> {
+            overlayAllowed -> {
                 statusCard.background = AppUi.rounded(
                     this,
                     AppUi.GREEN_TINT,

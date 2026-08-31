@@ -43,6 +43,7 @@ class SettingsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(AppUi.BG)
         }
+        AppUi.applyTopSystemInset(root)
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -233,7 +234,7 @@ class SettingsActivity : Activity() {
         content.addView(
             AppUi.body(
                 this,
-                "Versión 3.7.0",
+                "Versión 3.7.1",
                 11.5f
             ).apply {
                 gravity = Gravity.CENTER
