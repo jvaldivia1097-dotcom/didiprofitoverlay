@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jonathan.didiprofit.OfferParserV33Test" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-10T05:48:15.240Z" hostname="DANNA-HUESCA" time="0.006">
+  <properties/>
+  <testcase name="splitTransientRowsAreNotCombinedAnymore" classname="com.jonathan.didiprofit.OfferParserV33Test" time="0.003"/>
+  <testcase name="standardFullscreenOfferStillParses" classname="com.jonathan.didiprofit.OfferParserV33Test" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

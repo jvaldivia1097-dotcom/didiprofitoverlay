@@ -1,0 +1,103 @@
+Picked up JAVA_TOOL_OPTIONS: -Djdk.net.unixdomain.tmpdir="C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\.tools\tmp"
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.13/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:checkDebugAarMetadata
+> Task :app:processDebugNavigationResources
+> Task :app:generateDebugResValues
+> Task :app:compileDebugNavigationResources
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebug
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:preDebugAndroidTestBuild SKIPPED
+> Task :app:generateDebugAndroidTestResValues
+> Task :app:extractProguardFiles
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:desugarDebugFileDependencies
+> Task :app:processDebugResources
+> Task :app:checkDebugDuplicateClasses
+> Task :app:compileDebugKotlin
+> Task :app:mergeExtDexDebug
+
+> Task :app:compileDebugKotlin
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/CircularTimerView.kt:32:42 'field scaledDensity: Float' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/HistoryActivity.kt:32:16 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/HistoryActivity.kt:33:16 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/HistoryActivity.kt:35:30 'var systemUiVisibility: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/HistoryActivity.kt:36:22 'static field SYSTEM_UI_FLAG_LIGHT_STATUS_BAR: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/MainActivity.kt:46:16 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/MainActivity.kt:47:16 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/MainActivity.kt:49:30 'var systemUiVisibility: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/MainActivity.kt:50:22 'static field SYSTEM_UI_FLAG_LIGHT_STATUS_BAR: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/SettingsActivity.kt:32:16 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/SettingsActivity.kt:33:16 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/SettingsActivity.kt:35:30 'var systemUiVisibility: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/SettingsActivity.kt:35:56 'static field SYSTEM_UI_FLAG_LIGHT_STATUS_BAR: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/TopTenActivity.kt:36:16 'var statusBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/TopTenActivity.kt:37:16 'var navigationBarColor: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/TopTenActivity.kt:39:30 'var systemUiVisibility: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/main/java/com/jonathan/didiprofit/TopTenActivity.kt:40:22 'static field SYSTEM_UI_FLAG_LIGHT_STATUS_BAR: Int' is deprecated. Deprecated in Java.
+
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:processDebugJavaRes
+
+> Task :app:compileDebugUnitTestKotlin
+w: file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/src/test/java/com/jonathan/didiprofit/OcrFrameAccumulatorTest.kt:10:27 'constructor(windowMs: Long = ..., maxFrames: Int = ...): OcrFrameAccumulator' is deprecated. No se usa desde V3.3.2.
+
+> Task :app:generateDebugAndroidTestLintModel
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+
+> Task :app:testDebugUnitTest
+Picked up JAVA_TOOL_OPTIONS: -Djdk.net.unixdomain.tmpdir="C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\.tools\tmp"
+
+> Task :app:generateDebugLintReportModel
+> Task :app:generateDebugUnitTestLintModel
+> Task :app:lintAnalyzeDebugAndroidTest
+> Task :app:lintAnalyzeDebug
+> Task :app:lintAnalyzeDebugUnitTest
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:mergeDebugJavaResource
+> Task :app:mergeLibDexDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJniLibFolders
+> Task :app:mergeDebugNativeLibs
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libmlkit_google_ocr_pipeline.so. Run with --info option to learn more.
+
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+> Task :app:lintReportDebug
+Wrote HTML report to file:///C:/Users/100160722/Documents/ChatGPT/App_Didi_Rentabilidad/didiprofitoverlay/DidiProfitOverlay/app/build/reports/lint-results-debug.html
+
+> Task :app:lintDebug
+
+BUILD SUCCESSFUL in 5m 50s
+53 actionable tasks: 53 executed

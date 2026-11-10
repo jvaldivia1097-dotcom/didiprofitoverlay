@@ -1,0 +1,351 @@
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\build.gradle.kts:13: Warning: Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the android.os.Build.VERSION_CODES javadoc for details. [OldTargetApi]
+        targetSdk = 35
+        ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "OldTargetApi":
+   When your application or sdk runs on a version of Android that is more
+   recent than your targetSdkVersion specifies that it has been tested with,
+   various compatibility modes kick in. This ensures that your application
+   continues to work, but it may look out of place. For example, if the
+   targetSdkVersion is less than 14, your app may get an option button in the
+   UI.
+
+   To fix this issue, set the targetSdkVersion to the highest available value.
+   Then test your app to make sure everything works correctly. You may want to
+   consult the compatibility notes to see what changes apply to each version
+   you are adding support for:
+   https://developer.android.com/reference/android/os/Build.VERSION_CODES.html
+   as well as follow this guide:
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.
+   html
+
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.html
+
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\build.gradle.kts:8: Warning: A newer version of compileSdkVersion than 35 is available: 36 [GradleDependency]
+    compileSdk = 35
+    ~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\AnalysisResumeState.kt:51: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\AnalysisResumeState.kt:80: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\CaptureService.kt:605: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\CaptureService.kt:619: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\HistoryActivity.kt:34: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:48: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:115: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\SettingsActivity.kt:34: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\TopTenActivity.kt:38: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "ObsoleteSdkInt":
+   This check flags version checks that are not necessary, because the
+   minSdkVersion (or surrounding known API level) is already at least as high
+   as the version checked for.
+
+   Similarly, it also looks for resources in -vNN folders, such as values-v14
+   where the version qualifier is less than or equal to the minSdkVersion,
+   where the contents should be merged into the best folder.
+
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:1351: Warning: Do not place Android context classes in static fields; this is a memory leak [StaticFieldLeak]
+        @Volatile
+        ^
+
+   Explanation for issues of type "StaticFieldLeak":
+   A static field will leak contexts.
+
+   Non-static inner classes have an implicit reference to their outer class.
+   If that outer class is for example a Fragment or Activity, then this
+   reference means that the long-running handler/loader/task will hold a
+   reference to the activity which prevents it from getting garbage
+   collected.
+
+   Similarly, direct field references to activities and fragments from these
+   longer running instances can cause leaks.
+
+   ViewModel classes should never point to Views or non-application Contexts.
+
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\AndroidManifest.xml:9: Warning: Should explicitly set android:icon, there is no default [MissingApplicationIcon]
+    <application
+     ~~~~~~~~~~~
+
+   Explanation for issues of type "MissingApplicationIcon":
+   You should set an icon for the application as whole because there is no
+   default. This attribute must be set as a reference to a drawable resource
+   containing the image (for example @drawable/icon).
+
+   https://developer.android.com/studio/publish/preparing#publishing-configure
+
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\AnalysisResumeState.kt:25: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\AnalysisResumeState.kt:41: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\CaptureService.kt:570: Warning: Use the KTX function createBitmap instead? [UseKtx]
+        val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\CaptureService.kt:588: Warning: Use the KTX extension function Bitmap.scale instead? [UseKtx]
+            return Bitmap.createScaledBitmap(content, 1080, newHeight, true).also {
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:610: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                Uri.parse("package:$packageName")
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\ProfitPreferences.kt:29: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit()
+        ~~~~~~~~~~~~
+
+   Explanation for issues of type "UseKtx":
+   The Android KTX libraries decorates the Android platform SDK as well as
+   various libraries with more convenient extension functions available from
+   Kotlin, allowing you to use default parameters, named parameters, and
+   more.
+
+   Available options:
+
+   **remove-defaults** (default is true):
+   Whether to skip arguments that match the defaults provided by the extension.
+
+   Extensions often provide default values for some of the parameters. For example:
+   ```kotlin
+   fun Path.readLines(charset: Charset = Charsets.UTF_8): List<String> { return Files.readAllLines(this, charset) }
+   ```
+   This lint check will by default automatically omit parameters that match the default, so if your code was calling
+
+   ```kotlin
+   Files.readAllLines(file, Charset.UTF_8)
+   ```
+   lint would replace this with
+   ```kotlin
+   file.readLines()
+   ```
+   rather than
+
+   ```kotlin
+   file.readLines(Charset.UTF_8
+   ```
+   You can turn this behavior off using this option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="remove-defaults" value="true" />
+       </issue>
+   </lint>
+   ```
+
+   **require-present** (default is true):
+   Whether to only offer extensions already available.
+
+   This option lets you only have lint suggest extension replacements if those extensions are already available on the class path (in other words, you're already depending on the library containing the extension method.)
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="require-present" value="true" />
+       </issue>
+   </lint>
+   ```
+
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:282: Warning: Custom view `TextView` has setOnTouchListener called on it but does not override performClick [ClickableViewAccessibility]
+            setOnTouchListener {
+            ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:282: Warning: onTouch lambda should call View#performClick when a click is detected [ClickableViewAccessibility]
+            setOnTouchListener {
+                               ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:1096: Warning: onTouch lambda should call View#performClick when a click is detected [ClickableViewAccessibility]
+        view.setOnTouchListener {
+                                ^
+
+   Explanation for issues of type "ClickableViewAccessibility":
+   If a View that overrides onTouchEvent or uses an OnTouchListener does not
+   also implement performClick and call it when clicks are detected, the View
+   may not handle accessibility actions properly. Logic handling the click
+   actions should ideally be placed in View#performClick as some accessibility
+   services invoke performClick when a click action should occur.
+
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\AppUi.kt:337: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                text = "${item.icon}\n${item.label}"
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\HistoryActivity.kt:131: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            text = "★ Top 10"
+                    ~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\HistoryActivity.kt:672: Warning: Number formatting does not take into account locale settings. Consider using String.format instead. [SetTextI18n]
+                text = item.score.toString()
+                       ~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:417: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                    text = "● $label"
+                           ~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:484: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            todayCount.text = "Sin propuestas hoy"
+                               ~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:522: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                statusTitle.text = "Análisis pausado"
+                                    ~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:541: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                statusTitle.text = "Superposición permitida"
+                                    ~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:543: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                statusBody.text = "Todo listo para analizar propuestas"
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:553: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                statusTitle.text = "Falta permiso de superposición"
+                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\MainActivity.kt:555: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                statusBody.text = "Autorízalo una sola vez antes de iniciar el análisis"
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:85: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        hourlyView?.text = "Analizando DiDi…"
+                            ~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:87: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        kmView?.text = "Esperando propuesta"
+                        ~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:89: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        detailsView?.text = "Incluye recogida + viaje"
+                             ~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:133: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+        scoreView?.text = "Rentabilidad $score/100 · ${offer.profitabilityLabel(thresholds)}"
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:133: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        scoreView?.text = "Rentabilidad $score/100 · ${offer.profitabilityLabel(thresholds)}"
+                           ~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:133: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        scoreView?.text = "Rentabilidad $score/100 · ${offer.profitabilityLabel(thresholds)}"
+                                              ~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:140: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+            finishEstimateView?.text = "Fin aprox. si aceptas: $timeText"
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:140: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            finishEstimateView?.text = "Fin aprox. si aceptas: $timeText"
+                                        ~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:224: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            text = "Pon Tu Precio · mínimo"
+                    ~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:416: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        hourlyView?.text = "⏱ Temporizador de viaje"
+                            ~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:419: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        kmView?.text = "Ajusta el tiempo total"
+                        ~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:434: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            text = "Cancelar"
+                    ~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:458: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+            "$selectedTimerMinutes min"
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:458: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            "$selectedTimerMinutes min"
+                                  ~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:584: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                "⏱ ${
+                ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:589: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                } restantes"
+                 ~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:593: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                "Fin aprox. ${
+                ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:593: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                "Fin aprox. ${
+                 ~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:607: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                "Tiempo estimado: $selectedTimerMinutes min"
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:607: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                "Tiempo estimado: $selectedTimerMinutes min"
+                 ~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:607: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                "Tiempo estimado: $selectedTimerMinutes min"
+                                                       ~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:617: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                "⏱ +${
+                ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:628: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                "Tiempo adicional"
+                 ~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:637: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                "Fin estimado: $finishText · Total ${
+                ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:637: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                "Fin estimado: $finishText · Total ${
+                 ~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:637: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                "Fin estimado: $finishText · Total ${
+                                          ~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:731: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            text = "▶ REANUDAR ANÁLISIS"
+                    ~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:736: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            "✓ Viaje finalizado"
+             ~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:746: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                    "✓ ${
+                    ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:751: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                    } antes de lo estimado"
+                     ~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:759: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                    "+${
+                    ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:764: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                    } sobre el tiempo estimado"
+                     ~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:772: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                    "En tiempo"
+                     ~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:783: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+            "Estimado ${
+            ^
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:783: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            "Estimado ${
+             ~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\OverlayController.kt:788: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            } · Real ${
+             ~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\TopTenActivity.kt:579: Warning: Number formatting does not take into account locale settings. Consider using String.format instead. [SetTextI18n]
+                    rank.toString()
+                    ~~~~~~~~~~~~~~~
+C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay\app\src\main\java\com\jonathan\didiprofit\TopTenActivity.kt:723: Warning: Number formatting does not take into account locale settings. Consider using String.format instead. [SetTextI18n]
+                    item.score.toString()
+                    ~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SetTextI18n":
+   When calling TextView#setText
+   * Never call Number#toString() to format numbers; it will not handle
+   fraction separators and locale-specific digits properly. Consider using
+   String#format with proper format specifications (%d or %f) instead.
+   * Do not pass a string literal (e.g. "Hello") to display text. Hardcoded
+   text can not be properly translated to other languages. Consider using
+   Android resource strings instead.
+   * Do not build messages by concatenating text chunks. Such messages can not
+   be properly translated.
+
+   https://developer.android.com/guide/topics/resources/localization.html
+
+0 errors, 70 warnings

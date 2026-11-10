@@ -1,0 +1,19 @@
+# Archivos locales y salidas de Android/Gradle
+**/.gradle/
+**/.kotlin/
+**/build/
+**/local.properties
+**/.idea/
+*.iml
+.tools/
+local-evidence/
+# El material de firma nunca se versiona
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+signing.properties
+.env
+.env.*
+!.env.example
