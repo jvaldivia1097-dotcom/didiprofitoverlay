@@ -6,7 +6,7 @@ Aplicación Android existente de análisis informativo de ofertas visibles de Di
 
 1. Leer `docs/ESTADO_PROYECTO.md`, `docs/ENTREGA_WORK.md`, `docs/DESARROLLO_Y_ENTREGA.md` y los casos pertinentes de `docs/REGRESIONES_Y_PRUEBAS.md`.
 2. Comprobar cwd, `git remote -v`, rama, HEAD, `git status --short --branch` y diff. Conservar cambios del usuario; no resetear, limpiar ni asumir que main coincide con esta base. Comparar remoto sólo por lectura/fetch cuando corresponda.
-3. Trabajar en rama local de alcance específico. M01 sólo autoriza trabajo local: no push, merge, release, cambio de secretos ni instalación sobre la app del usuario.
+3. Trabajar en rama de alcance específico y seguir la autorización del encargo vigente. M02 permite publicar su rama y abrir PR hacia main; no permite merge, push directo a main, release, cambios de secretos ni instalación sobre la app del usuario.
 
 ## Mapa y comandos
 
@@ -16,6 +16,7 @@ Aplicación Android existente de análisis informativo de ofertas visibles de Di
 - Desde raíz Git: `. .\scripts\Preparar-Entorno.ps1`; después `Set-Location DidiProfitOverlay`.
 - Wrapper verificado: `.\gradlew.bat --version` (Gradle 8.13/JDK 17). Comprobaciones: `.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --console=plain --max-workers=2`. Consultar resultados y fallos reales en ENTREGA_WORK; no equiparar assemble con tests.
 - Linux/macOS: JDK 17 y SDK 35 configurados, `./gradlew ...`. No afirmar verificación en esos sistemas; sólo Windows fue utilizado en M01.
+- CI de PR: `.github/workflows/validate-pr.yml`, tests/lint/debug sin secretos. La firma release sigue en `build-apk.yml` y se activa por push a main o workflow_dispatch; no fusionar/activarlo sin el permiso correspondiente. Consultar resultados remotos reales en ENTREGA_WORK.
 
 ## Límites de edición y entrega
 
