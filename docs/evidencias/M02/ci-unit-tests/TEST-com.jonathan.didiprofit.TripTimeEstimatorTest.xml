@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jonathan.didiprofit.TripTimeEstimatorTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-10T06:38:54.547Z" hostname="runnervm7aw5e" time="0.001">
+  <properties/>
+  <testcase name="invalidDurationsAreRejected" classname="com.jonathan.didiprofit.TripTimeEstimatorTest" time="0.001"/>
+  <testcase name="crossesMidnightCorrectly" classname="com.jonathan.didiprofit.TripTimeEstimatorTest" time="0.0"/>
+  <testcase name="fifteenMinutesFromTenEndsAtTenFifteen" classname="com.jonathan.didiprofit.TripTimeEstimatorTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

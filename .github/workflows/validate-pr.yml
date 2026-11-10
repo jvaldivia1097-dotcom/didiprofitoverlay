@@ -1,0 +1,89 @@
+name: Android PR validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  android-validation:
+    name: Tests, lint y debug
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: DidiProfitOverlay
+
+    steps:
+      - name: Descargar propuesta de integracion
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar SDK compatible
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+
+      - name: Configurar cache y validar wrapper
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+          validate-wrappers: true
+
+      - name: Comprobar Gradle
+        run: ./gradlew --version
+
+      - name: Pruebas unitarias
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --console=plain --max-workers=2
+
+      - name: Android lint
+        run: ./gradlew :app:lintDebug --no-daemon --console=plain --max-workers=2
+
+      - name: Compilar debug
+        run: ./gradlew :app:assembleDebug --no-daemon --console=plain --max-workers=2
+
+      - name: Resumir resultados disponibles
+        if: always()
+        run: |
+          {
+            echo '### Referencia M01 (no es una supresion de lint)'
+            echo '15 pruebas; lint: 0 errores y 70 advertencias preexistentes.'
+            echo '### Resultados reales de esta ejecucion'
+            if compgen -G 'app/build/test-results/testDebugUnitTest/TEST-*.xml' > /dev/null; then
+              echo '```xml'
+              grep -h '<testsuite ' app/build/test-results/testDebugUnitTest/TEST-*.xml
+              echo '```'
+            fi
+            if [ -f app/build/reports/lint-results-debug.txt ]; then
+              tail -n 1 app/build/reports/lint-results-debug.txt
+            fi
+            echo 'Los pasos del job y sus reportes determinan el resultado; una referencia no acredita exito.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Conservar reportes de pruebas y lint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-pr-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            DidiProfitOverlay/app/build/test-results/testDebugUnitTest/TEST-*.xml
+            DidiProfitOverlay/app/build/reports/tests/testDebugUnitTest/
+            DidiProfitOverlay/app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14

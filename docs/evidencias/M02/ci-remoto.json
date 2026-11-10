@@ -1,0 +1,232 @@
+{
+  "date": "2026-11-10",
+  "pr": 1,
+  "failed_run": 42769093803,
+  "failed_jobs": [
+    {
+      "id": 129672416808,
+      "name": "Tests, lint y debug",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_id": 42769093803,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Descargar propuesta de integracion",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Configurar Java 17",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Preparar SDK compatible",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4
+        },
+        {
+          "name": "Configurar cache y validar wrapper",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5
+        },
+        {
+          "name": "Comprobar Gradle",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6
+        },
+        {
+          "name": "Pruebas unitarias",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7
+        },
+        {
+          "name": "Android lint",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Compilar debug",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9
+        },
+        {
+          "name": "Resumir resultados disponibles",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Conservar reportes de pruebas y lint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Post Configurar Java 17",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        },
+        {
+          "name": "Post Descargar propuesta de integracion",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23
+        }
+      ]
+    }
+  ],
+  "successful_run": 42769700249,
+  "commit": "eae45221ff06b9d14a5421ba93116d282f909e8b",
+  "successful_jobs": [
+    {
+      "id": 129674354253,
+      "name": "Tests, lint y debug",
+      "status": "completed",
+      "conclusion": "success",
+      "run_id": 42769700249,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Descargar propuesta de integracion",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Configurar Java 17",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Preparar SDK compatible",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Configurar cache y validar wrapper",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Comprobar Gradle",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Pruebas unitarias",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Android lint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Compilar debug",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Resumir resultados disponibles",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Conservar reportes de pruebas y lint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Post Configurar cache y validar wrapper",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Post Configurar Java 17",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        },
+        {
+          "name": "Post Descargar propuesta de integracion",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13741491249,
+      "name": "android-pr-reports-42769700249-1",
+      "size_in_bytes": 49438,
+      "url": "https://api.github.com/repos/jvaldivia1097-dotcom/didiprofitoverlay/actions/artifacts/13741491249",
+      "archive_download_url": "https://api.github.com/repos/jvaldivia1097-dotcom/didiprofitoverlay/actions/artifacts/13741491249/zip",
+      "expired": false,
+      "created_at": "2026-11-10T06:40:11Z",
+      "expires_at": "2026-11-24T06:40:09Z",
+      "updated_at": "2026-11-10T06:40:11Z",
+      "digest": "sha256:f28e64d85219f232274560fe26d3d26dd87b5ed3ff2c9262529245356763e731",
+      "workflow_run": {
+        "id": 42769700249,
+        "repository_id": 1330478380,
+        "head_repository_id": 1330478380,
+        "head_branch": "codex/didi-m02-ci",
+        "head_sha": "eae45221ff06b9d14a5421ba93116d282f909e8b"
+      }
+    }
+  ],
+  "tests": 15,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "lint_errors": 0,
+  "lint_warnings": 71
+}

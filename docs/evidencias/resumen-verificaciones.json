@@ -1,0 +1,61 @@
+{
+  "lint_errors": 0,
+  "gradle_exit_code": 0,
+  "lint_warnings": 70,
+  "physical_tests_executed": false,
+  "unit_suites": [
+    {
+      "name": "com.jonathan.didiprofit.HistoryCandidateTrackerTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.jonathan.didiprofit.OcrFrameAccumulatorTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.jonathan.didiprofit.OfferParserTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.jonathan.didiprofit.OfferParserV33Test",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.jonathan.didiprofit.TripTimeEstimatorTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "gradle_tasks_executed": 53,
+  "gradle_duration": "5m 50s",
+  "apks": [
+    {
+      "path": "C:\\Users\\100160722\\Documents\\ChatGPT\\App_Didi_Rentabilidad\\local-evidence\\original-release\\app-release.apk",
+      "sha256": "c66651311c57b6063ca808eba4b2da70d1a42aab4766cc283775424c16b01d8a",
+      "bytes": 45683622
+    },
+    {
+      "path": "C:\\Users\\100160722\\Documents\\ChatGPT\\App_Didi_Rentabilidad\\didiprofitoverlay\\DidiProfitOverlay\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+      "sha256": "4706874075b952a5bf127cfe80f58be7d96316530755d35cac5591b3e6f5e830",
+      "bytes": 46554594
+    }
+  ],
+  "timezone": "America/Mexico_City",
+  "release_build_executed_locally": false,
+  "app_source_unchanged": true,
+  "date": "2026-11-09"
+}
