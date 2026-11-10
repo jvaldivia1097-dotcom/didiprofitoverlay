@@ -1,4 +1,5 @@
 {
+  "scope": "Snapshot historico anterior a autenticar Git; estado vigente en ci-remoto.json y ENTREGA_WORK.md",
   "review_date": "2026-11-10",
   "timezone": "America/Mexico_City",
   "functional_base": "eb0c17e3b004c87bd305a54b5103aac623a78e30",

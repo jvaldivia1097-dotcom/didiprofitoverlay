@@ -52,6 +52,8 @@ La distribución ya descargada y validada se reutilizó en la caché del wrapper
 
 ### Integración continua propuesta en M02
 
+CI comprobado en el PR #1: la preparación Android usa `android-actions/setup-android@v3` con `packages: 'platforms;android-35 build-tools;35.0.0'`. La llamada previa a sdkmanager sin preparar PATH falló con exit 127 en Ubuntu 24.04; no reutilizar esa suposición. La acción prepara las herramientas antes de ejecutar los paquetes. El run corregido 42769700249 ejecutó 15 tests, lint (0 errores/71 advertencias) y debug con éxito. La advertencia adicional frente a M01 recomienda Gradle más nuevo; conservar 8.13 mientras no se autorice actualización. Resultados y enlaces en ENTREGA_WORK.
+
 `.github/workflows/validate-pr.yml` se activa únicamente por `pull_request` hacia `main` (apertura, reapertura y sincronización predeterminadas). Usa Ubuntu 24.04, Temurin 17 y el wrapper 8.13 del repositorio; prepara API 35 y Build Tools 35.0.0 sólo si el SDK del runner lo necesita. `setup-gradle@v4` valida el wrapper y utiliza caché de sólo lectura. Ejecuta tests, lint y assembleDebug como pasos separados, sin `continue-on-error`. Se conserva el resultado real de lint; **70 advertencias de M01 son referencia, no baseline ni umbral que oculte hallazgos**.
 
 El token tiene `contents: read`, checkout no conserva credenciales y el workflow no referencia secretos, firma release, publicaciones ni `pull_request_target`. Cancela ejecuciones obsoletas del mismo PR y limita el job a 30 minutos. Guarda XML/HTML de pruebas e informes lint durante 14 días, incluso al fallar; no carga APK ni material de firma. La disponibilidad del check no implica protección de rama obligatoria: M02 no modifica reglas de main.
