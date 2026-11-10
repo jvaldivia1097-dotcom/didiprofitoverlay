@@ -35,7 +35,10 @@ jobs:
           java-version: '17'
 
       - name: Preparar SDK compatible
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
 
       - name: Configurar cache y validar wrapper
         uses: gradle/actions/setup-gradle@v4
