@@ -50,6 +50,16 @@ La distribución ya descargada y validada se reutilizó en la caché del wrapper
 
 ## Análisis, pruebas y debug
 
+### Integración continua propuesta en M02
+
+`.github/workflows/validate-pr.yml` se activa únicamente por `pull_request` hacia `main` (apertura, reapertura y sincronización predeterminadas). Usa Ubuntu 24.04, Temurin 17 y el wrapper 8.13 del repositorio; prepara API 35 y Build Tools 35.0.0 sólo si el SDK del runner lo necesita. `setup-gradle@v4` valida el wrapper y utiliza caché de sólo lectura. Ejecuta tests, lint y assembleDebug como pasos separados, sin `continue-on-error`. Se conserva el resultado real de lint; **70 advertencias de M01 son referencia, no baseline ni umbral que oculte hallazgos**.
+
+El token tiene `contents: read`, checkout no conserva credenciales y el workflow no referencia secretos, firma release, publicaciones ni `pull_request_target`. Cancela ejecuciones obsoletas del mismo PR y limita el job a 30 minutos. Guarda XML/HTML de pruebas e informes lint durante 14 días, incluso al fallar; no carga APK ni material de firma. La disponibilidad del check no implica protección de rama obligatoria: M02 no modifica reglas de main.
+
+El workflow release `build-apk.yml` permanece intacto: se activa por push a main o workflow_dispatch. Por tanto, **un futuro merge hacia main activaría el build firmado existente**. Revisar esa consecuencia antes de autorizar la integración; M02 sólo permite rama de trabajo y PR, sin merge ni despacho de release.
+
+Para comprobar CI localmente sin repetir el build de M01: actionlint sobre el nuevo YAML y `gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --dry-run --offline --no-daemon --console=plain --max-workers=2`. Una simulación no ejecuta tests ni acredita CI remoto. Consultar ENTREGA_WORK para el estado real de publicación/validación y sus posibles impedimentos de acceso.
+
 Ejecutar desde DidiProfitOverlay, después de preparar la sesión:
 
 ```powershell

@@ -1,51 +1,51 @@
 # Estado del proyecto
 
-Revisión: **2026-11-09, America/Mexico_City**. Último encargo: **DIDI-M01 — preparación y transición a Codex**. Estado: **LISTO CON PENDIENTES**.
+Revisión: **2026-11-10, America/Mexico_City**. Último encargo: **DIDI-M02 — integración controlada con GitHub y CI**.
+
+**Estado M02: BLOQUEADO en publicación/validación remota por falta de autenticación de escritura. Preparación local concluida.** El usuario indicó que autenticará Git local; todavía no confirmó que haya terminado. No existe PR ni resultado remoto M02 aprobado.
 
 ## Identidad y ubicación
 
 - Raíz Git: `C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay`.
-- Directorio de build: `C:\Users\100160722\Documents\ChatGPT\App_Didi_Rentabilidad\didiprofitoverlay\DidiProfitOverlay`.
-- Remoto: `https://github.com/jvaldivia1097-dotcom/didiprofitoverlay.git`.
-- Rama de trabajo: `codex/didi-m01-preparacion`. Base comprobada: `eb0c17e3b004c87bd305a54b5103aac623a78e30`.
-- Al clonar, `main`, `origin/main` y referencia V3.7.1 coincidían (ahead/behind 0/0), sin modificaciones. Main permanece en esa base; preparación en rama local. Commit de preparación identificado por `git log -1` y evidencia externa `..\local-evidence\git-final.log`.
-- `applicationId`/namespace: `com.jonathan.didiprofit`; `versionName=0.3.7.1`, `versionCode=23`; min 26, target/compile 35. Coinciden código y APK histórica. Versiones/identidad no alteradas.
+- Build: `DidiProfitOverlay/`, único módulo `:app`.
+- Origin: `https://github.com/jvaldivia1097-dotcom/didiprofitoverlay.git`.
+- Rama local: `codex/didi-m02-ci`, derivada de M01 `20a6ce41781a626f659d07a581a6dbf48b94d955`.
+- Commit CI: `45ca934b05ab649fa53ca5908d1581236e5aa1e4`. Commit documental de cierre: consultar `git log -1` y `..\local-evidence\M02\git-final.log`.
+- Main local, origin/main y main remoto comprobados en `eb0c17e3b004c87bd305a54b5103aac623a78e30`; sin avances. Árbol inicial limpio; M01 íntegro.
+- Identidad: `com.jonathan.didiprofit`, versionName **0.3.7.1**, versionCode **23**, min **26**, compile/target **35**, sin cambios.
 
-## Componentes presentes
+## Componentes y entorno
 
-MainActivity, CaptureService (MediaProjection + ImageReader/VirtualDisplay + ML Kit Latin local), OfferParser, modelos de rentabilidad, HistoryCandidateTracker, HistoryRepository SQLite v1, OverlayController, CircularTimerView, AnalysisResumeState, SettingsActivity, HistoryActivity y TopTenActivity. Mapa y fórmulas: [ARQUITECTURA.md](ARQUITECTURA.md).
+MainActivity, CaptureService/MediaProjection/ML Kit Latin local de un frame, OfferParser, modelos/cálculos, HistoryCandidateTracker, HistoryRepository SQLite v1, OverlayController/CircularTimerView, AnalysisResumeState y actividades de configuración/historial/rankings. Detalle: [ARQUITECTURA.md](ARQUITECTURA.md).
 
-Fuente única: `DidiProfitOverlay/`. Mantener fuera de edición/compilación el parche `DidiProfitOverlay_V3.6.0_patch/`. Hay un workflow debug anidado obsoleto; el workflow activo en nivel correcto es el de release firmada. README/BUILD_NOTES/PARSER_TEST_RESULTS de V2 son antecedentes, no estado actual.
+Todo `DidiProfitOverlay/`, el workflow firmado e históricos permanecen idénticos a M01. No editar/compilar `DidiProfitOverlay_V3.6.0_patch/` ni workflow debug anidado; fuente única `DidiProfitOverlay/`.
 
-## Entorno y comprobaciones
+Se reutilizan Git 2.56.0.windows.4, Temurin 17.0.21+9, Gradle 8.13, AGP 8.13.2, Kotlin 2.3.21, ML Kit 16.0.1 y SDK API 35/Build Tools 35.0.0 de M01. Herramientas/cachés en `..\.tools`, sesión mediante `scripts/Preparar-Entorno.ps1`; sin reinstalación ni ajustes globales. M02 añadió sólo actionlint portable 1.7.12 con checksum oficial verificado.
 
-| Elemento | Estado confirmado |
+## CI y comprobaciones reales
+
+Workflow nuevo `.github/workflows/validate-pr.yml`: PR hacia main, Ubuntu 24.04/Java 17/wrapper 8.13/SDK 35; tests, lint y debug separados, sin secretos ni release, permisos contents:read, validación de wrapper y reportes 14 días. No se cambiaron reglas de protección de main.
+
+| Comprobación | Resultado |
 | --- | --- |
-| Git | 2.56.0.windows.4, reutilizado |
-| JDK | Temurin 17.0.21+9 portable; java/javac operativos |
-| Gradle | Wrapper 8.13 completado y ejecutado; distribución y JAR con hashes oficiales verificados |
-| AGP / Kotlin / ML Kit | 8.13.2 / 2.3.21 / 16.0.1; sin cambios |
-| SDK | API 35 rev. 2, Build Tools 35.0.0, command-line tools 22.0, platform-tools 37.0.1 |
-| Sesión local | `scripts/Preparar-Entorno.ps1`; herramientas/caché en `..\.tools`, sin configuración global ni local.properties |
-| Tests | 15 aprobados, 0 fallos/errores/omitidos, cinco clases existentes |
-| Lint | 0 errores, 70 advertencias preexistentes; no se suprimieron |
-| Debug | assembleDebug correcto; APK verificada con apksigner y aapt |
-| Release | No compilada/firmada localmente; APK histórica de Actions recuperada y verificada |
-| Físico | No ejecutado; no se instaló, desinstaló ni reemplazó la app del teléfono |
+| M01 reutilizado | 15 tests aprobados; lint 0 errores/70 advertencias; debug compilada/verificada |
+| Actionlint M02 | YAML válido, exit 0; sin shellcheck externo disponible |
+| Gradle M02 local | Dry-run offline resuelve las tres tareas; exit 0, 35 s; tareas SKIPPED por simulación |
+| Tests/build locales nuevos | No repetidos: fuente/wrapper/dependencias idénticos a M01 |
+| Publicación | Git sin autenticación; conexión GitHub rechaza escritura con 403 |
+| PR/CI remoto M02 | No creados/no ejecutado; esperando autenticación legítima |
+| Release local / físico | No ejecutados; pendientes de M01 conservados |
 
-Única ejecución Android conjunta: tests + lint + assembleDebug, exit 0, 5m 50s, 53 tareas ejecutadas. Se resolvió fallo de sockets Java por ruta TEMP larga con propiedad de sesión `jdk.net.unixdomain.tmpdir`; se conservaron logs de diagnóstico. Procedimiento: [DESARROLLO_Y_ENTREGA.md](DESARROLLO_Y_ENTREGA.md).
+Las 70 advertencias siguen registradas en `docs/evidencias/lint-results-debug.txt` y `resumen-verificaciones.json`. Son referencia histórica, no baseline ni supresión; CI reportará resultados reales y errores de tareas harán fallar el job.
 
-## Firma, restricciones y pendientes
+El workflow firmado `build-apk.yml` no cambió: push a main o workflow_dispatch. **Un futuro merge activaría ese build firmado existente**; considerar esta consecuencia antes de autorizar integración. M02 no activó ese workflow ni modificó secretos.
 
-- Certificado SHA-256 de referencia obtenido de APK V3.7.1 de Actions: `57b0ca9f22d66c8ef491925b305023e9a92f3f33a94ae1c80bfbf94baaf9bc12`; firma v2 válida. La debug tiene certificado distinto y no es actualización de release.
-- Keystore original no disponible en el espacio autorizado; no se buscaron credenciales en otros proyectos. Integridad del contenedor sólo acreditada por el workflow histórico, no recalculada localmente. Capacidad actual de firmar release desde Codex **pendiente**. Conservar Actions y sus secretos; cualquier ejecución remota nueva requiere otro permiso.
-- No se comparó certificado con la aplicación instalada ni se ensayó actualización conservando datos. Validación física pendiente de permisos, OCR, historial, overlay, temporizador, reanudación y recuperación. Matriz: [REGRESIONES_Y_PRUEBAS.md](REGRESIONES_Y_PRUEBAS.md).
-- Conservar OCR de un frame, confirmación histórica por tres lecturas, SQLite/datos, círculo/expandido, pulsación 900 ms, captura detenida al comenzar timer y permiso nuevo al reanudar. No Uber, automatización de DiDi, reconstrucciones agresivas ni optimizaciones de WindowManager. No cambiar versiones, dependencias, applicationId o firma por rutina.
-- Lint advierte principalmente textos incrustados, APIs obsoletas, accesibilidad de gestos y una referencia estática de contexto/overlay; no se corrigió por quedar fuera de M01. También recomienda SDK más reciente; no es autorización para actualizarlo.
-- ML Kit incluye modelo local; APK final incorpora permisos INTERNET/ACCESS_NETWORK_STATE desde dependencias de transporte. No se examinó tráfico ni se certificó ausencia de telemetría. `allowBackup=true` es preexistente; respaldo/restauración no probados. Timer en memoria: no prometer persistencia ante muerte de proceso.
+## Restricciones, pendientes y siguiente paso
 
-## Último trabajo y siguiente paso
+Conservar OCR de un frame, confirmación de tres lecturas, SQLite/datos, cálculos, navegación, overlay, timer circular/expandido y finalización de 900 ms; iniciar timer libera captura y reanudar exige nueva autorización. Sin Uber, fusión de frames, reconstrucciones agresivas, cambios de WindowManager o identidad/firma. Matriz física pendiente: [REGRESIONES_Y_PRUEBAS.md](REGRESIONES_Y_PRUEBAS.md).
 
-M01 añadió wrapper, exclusiones/atributos Git, script de sesión y documentación/evidencias. Código funcional, manifiesto fuente, build de app, dependencias, tests, Actions y archivos históricos permanecen idénticos a la base. Sin publicación remota.
+Firma release local aún no disponible. Huella pública de referencia M01: `57b0ca9f22d66c8ef491925b305023e9a92f3f33a94ae1c80bfbf94baaf9bc12`; no acredita firma privada local ni coincidencia con teléfono. No se reprodujeron credenciales. Backup/restauración, muerte de proceso del timer y tráfico/telemetría de dependencias siguen sin probarse; modelo OCR local no acredita ausencia de tráfico.
 
-Siguiente paso recomendado: revisión de [ENTREGA_WORK.md](ENTREGA_WORK.md) en ChatGPT y encargo separado de validación física con la firma original, preservando la instalación y datos. Si se requieren nuevas release desde Codex, acordar previamente el canal seguro de firma o una ejecución autorizada de Actions. Actualizar este archivo después de cada encargo futuro.
+Siguiente paso: el usuario termina autenticación legítima de Git y avisa, sin enviar secretos al chat. Codex publicará sólo la rama M02, abrirá PR hacia main, observará CI y actualizará estado/informe con enlaces y resultados. La autorización M02 ya cubre esas operaciones. **No merge, push a main, despacho de release, cambio de secretos ni instalación de APK.**
+
+M02 añadió CI, ajustó AGENTS al alcance y documentó comprobaciones. Evidencia local en `docs/evidencias/M02/`; reporte vigente [ENTREGA_WORK.md](ENTREGA_WORK.md). M01 permanece íntegro en el historial del commit `20a6ce4`. Actualizar este archivo después de cada encargo.
