@@ -1,8 +1,10 @@
 package com.jonathan.didiprofit
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
@@ -12,6 +14,7 @@ import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.text.format.DateFormat
 import android.widget.LinearLayout
@@ -41,11 +44,22 @@ class OverlayController(
     private var hourlyView: TextView? = null
     private var kmView: TextView? = null
     private var detailsView: TextView? = null
-    private var scoreView: TextView? = null
-    private var finishEstimateView: TextView? = null
-    private var suggestionsTitleView: TextView? = null
-    private var suggestionsView: TextView? = null
-
+    private var waitingView: WaitingScannerView? = null
+    private var offerPanel: CompactOfferPanel? = null
+    private var renderedOffer: CompactOffer? = null
+    private var positionParams: WindowManager.LayoutParams? = null
+    private val positionPreferences =
+        context.getSharedPreferences("overlay_position", Context.MODE_PRIVATE)
+    private var waitingPosition: WaitingPosition? =
+        if (positionPreferences.contains("waiting_x") && positionPreferences.contains("waiting_y")) {
+            WaitingPosition(
+                positionPreferences.getFloat("waiting_x", 0f),
+                positionPreferences.getFloat("waiting_y", 0f)
+            )
+        } else null
+    private var gestureActive = false
+    private var lastTapUpAt = 0L
+    private var displayArea = Rect()
     private var timerControls: LinearLayout? = null
     private var timerMinusView: TextView? = null
     private var timerMinutesView: TextView? = null
@@ -81,81 +95,43 @@ class OverlayController(
     fun showWaiting() {
         if (mode != Mode.ANALYZING) return
         ensureCreated()
-        prepareStandardPanel()
-        hourlyView?.text = "Analizando DiDi…"
-        hourlyView?.setTextColor(Color.WHITE)
-        kmView?.text = "Esperando propuesta"
-        kmView?.setTextColor(Color.LTGRAY)
-        detailsView?.text = "Incluye recogida + viaje"
-        scoreView?.visibility = View.GONE
-        finishEstimateView?.visibility = View.GONE
-        finishEstimateView?.text = ""
-        suggestionsTitleView?.visibility = View.GONE
-        suggestionsView?.visibility = View.GONE
-        suggestionsView?.text = ""
+        if (isWaiting()) return
+
+        cancelGesture()
+        renderedOffer = null
+        offerPanel?.visibility = View.GONE
+        setTimerHeaderVisibility(View.GONE)
         hideTimerControls()
+        root?.setPadding(0, 0, 0, 0)
+        root?.background = null
+        waitingView?.visibility = View.VISIBLE
+        applyAnalysisPlacement()
     }
 
     fun showOffer(offer: RideOffer, thresholds: Thresholds) {
         if (mode != Mode.ANALYZING) return
         ensureCreated()
-        prepareStandardPanel()
-        lastOfferMinutes = offer.totalMinutes.coerceIn(
-            MIN_TIMER_MINUTES,
-            MAX_TIMER_MINUTES
-        )
-        hourlyView?.text = String.format(Locale.US, "$%.0f/h", offer.pesosPerHour)
-        hourlyView?.setTextColor(
-            scoreColor(
-                offer.pesosPerHour,
-                thresholds.hourlyExcellent,
-                thresholds.hourlyGood
-            )
-        )
-        kmView?.text = String.format(Locale.US, "$%.2f/km", offer.pesosPerKm)
-        kmView?.setTextColor(
-            scoreColor(
-                offer.pesosPerKm,
-                thresholds.kmExcellent,
-                thresholds.kmGood
-            )
-        )
-        detailsView?.text = String.format(
-            Locale.US,
-            "%d min · %.1f km · tarifa %.2f",
-            offer.totalMinutes,
-            offer.totalKilometers,
-            offer.fare
-        )
+        lastOfferMinutes = offer.totalMinutes.coerceIn(MIN_TIMER_MINUTES, MAX_TIMER_MINUTES)
+        val presentation = CompactOffer.from(offer, thresholds)
+        if (presentation == renderedOffer) return
 
-        val score = offer.profitabilityScore(thresholds)
-        scoreView?.visibility = View.VISIBLE
-        scoreView?.text = "Rentabilidad $score/100 · ${offer.profitabilityLabel(thresholds)}"
-        scoreView?.setTextColor(score100Color(score))
+        offerPanel?.render(presentation)
+        val entering = renderedOffer == null
+        renderedOffer = presentation
+        if (!entering) return
 
-        val estimatedFinish = TripTimeEstimator.estimatedFinishMillis(offer)
-        if (estimatedFinish != null) {
-            val timeText = DateFormat.getTimeFormat(context).format(Date(estimatedFinish))
-            finishEstimateView?.visibility = View.VISIBLE
-            finishEstimateView?.text = "Fin aprox. si aceptas: $timeText"
-        } else {
-            finishEstimateView?.visibility = View.GONE
-            finishEstimateView?.text = ""
-        }
-
-        suggestionsTitleView?.visibility = View.VISIBLE
-        suggestionsView?.visibility = View.VISIBLE
-        suggestionsView?.text = listOf(
-            suggestionLine(offer, thresholds.targetHourly1),
-            suggestionLine(offer, thresholds.targetHourly2),
-            suggestionLine(offer, thresholds.targetHourly3)
-        ).joinToString("\n")
+        cancelGesture()
+        waitingView?.visibility = View.GONE
+        setTimerHeaderVisibility(View.GONE)
         hideTimerControls()
+        root?.setPadding(0, 0, 0, 0)
+        root?.background = null
+        offerPanel?.visibility = View.VISIBLE
+        applyAnalysisPlacement()
     }
-
     fun remove() {
         mainHandler.removeCallbacks(timerTick)
-        hideStopTarget()
+        cancelGesture()
         val view = root
         if (view != null) {
             runCatching { windowManager.removeViewImmediate(view) }
@@ -165,10 +141,10 @@ class OverlayController(
         hourlyView = null
         kmView = null
         detailsView = null
-        scoreView = null
-        finishEstimateView = null
-        suggestionsTitleView = null
-        suggestionsView = null
+        waitingView = null
+        offerPanel = null
+        renderedOffer = null
+        positionParams = null
         timerControls = null
         timerMinusView = null
         timerMinutesView = null
@@ -183,7 +159,14 @@ class OverlayController(
         if (root != null) return
         removeAnyOverlay(context)
 
-        val container = LinearLayout(context).apply {
+        val container = object : LinearLayout(context) {
+            override fun onConfigurationChanged(newConfig: Configuration) {
+                super.onConfigurationChanged(newConfig)
+                post {
+                    if (root === this) updateDisplayArea()
+                }
+            }
+        }.apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(8))
             background = GradientDrawable().apply {
@@ -207,34 +190,8 @@ class OverlayController(
             textSize = 12f
             setTextColor(Color.LTGRAY)
         }
-        scoreView = TextView(context).apply {
-            textSize = 12f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(4), 0, 0)
-            visibility = View.GONE
-        }
-        finishEstimateView = TextView(context).apply {
-            textSize = 12f
-            setTextColor(Color.rgb(125, 211, 252))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(5), 0, 0)
-            visibility = View.GONE
-        }
-        suggestionsTitleView = TextView(context).apply {
-            text = "Pon Tu Precio · mínimo"
-            textSize = 12f
-            setTextColor(Color.LTGRAY)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(5), 0, 0)
-            visibility = View.GONE
-        }
-        suggestionsView = TextView(context).apply {
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            visibility = View.GONE
-        }
-
+        waitingView = WaitingScannerView(context).apply { visibility = View.GONE }
+        offerPanel = CompactOfferPanel(context).apply { visibility = View.GONE }
         timerMinusView = timerAdjustButton("−") {
             adjustTimerMinutes(-1)
         }
@@ -367,10 +324,12 @@ class OverlayController(
         container.addView(hourlyView)
         container.addView(kmView)
         container.addView(detailsView)
-        container.addView(scoreView)
-        container.addView(finishEstimateView)
-        container.addView(suggestionsTitleView)
-        container.addView(suggestionsView)
+        container.addView(waitingView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT
+        ))
+        container.addView(offerPanel, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
         container.addView(timerCompactView)
         container.addView(timerControls)
         container.addView(timerStartView)
@@ -385,14 +344,30 @@ class OverlayController(
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = dp(12)
-            y = dp(150)
+            gravity = Gravity.TOP or Gravity.LEFT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) fitInsetsTypes = 0
         }
 
         makeDraggable(container, lp)
+        container.addOnLayoutChangeListener { _, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom ->
+            if (mode != Mode.ANALYZING &&
+                (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
+            ) {
+                container.post {
+                    if (root === container && mode != Mode.ANALYZING) moveWithinDisplay(lp.x, lp.y)
+                }
+            }
+        }
+        container.setOnApplyWindowInsetsListener { _, insets ->
+            container.post { if (root === container) updateDisplayArea() }
+            insets
+        }
+        displayArea = usableDisplay()
+        initialWaitingPlacement(lp)
         windowManager.addView(container, lp)
         root = container
+        positionParams = lp
         registerOverlay(windowManager, container)
     }
 
@@ -400,10 +375,9 @@ class OverlayController(
         if (mode != Mode.ANALYZING) return
 
         ensureCreated()
-        prepareStandardPanel()
-        mainHandler.removeCallbacks(timerTick)
-
         mode = Mode.TIMER_SETUP
+        prepareTimerSetupPanel()
+        mainHandler.removeCallbacks(timerTick)
         onAnalysisPausedChanged(true)
 
         selectedTimerMinutes = (
@@ -425,7 +399,6 @@ class OverlayController(
                 "Precargado de la última propuesta: $it min"
             } ?: "Tiempo inicial: $DEFAULT_TIMER_MINUTES min"
 
-        hideAnalysisDetails()
 
         timerControls?.visibility = View.VISIBLE
         timerStartView?.visibility = View.VISIBLE
@@ -567,7 +540,6 @@ class OverlayController(
                     Date(timerFinishWallMillis)
                 )
 
-        hideAnalysisDetails()
 
         hourlyView?.visibility = View.VISIBLE
         kmView?.visibility = View.VISIBLE
@@ -656,11 +628,6 @@ class OverlayController(
         hourlyView?.visibility = View.GONE
         kmView?.visibility = View.GONE
         detailsView?.visibility = View.GONE
-        scoreView?.visibility = View.GONE
-        finishEstimateView?.visibility = View.GONE
-        suggestionsTitleView?.visibility = View.GONE
-        suggestionsView?.visibility = View.GONE
-
         timerControls?.visibility = View.GONE
         timerStartView?.visibility = View.GONE
         timerFinishView?.visibility = View.GONE
@@ -722,7 +689,6 @@ class OverlayController(
         kmView?.visibility = View.VISIBLE
         detailsView?.visibility = View.VISIBLE
 
-        hideAnalysisDetails()
 
         timerControls?.visibility = View.GONE
         timerStartView?.visibility = View.GONE
@@ -848,15 +814,24 @@ class OverlayController(
         timerExpanded = false
     }
 
-    private fun prepareStandardPanel() {
+    private fun prepareTimerSetupPanel() {
+        cancelGesture()
+        renderedOffer = null
+        waitingView?.visibility = View.GONE
+        offerPanel?.visibility = View.GONE
         timerExpanded = false
         restorePanelChrome()
         timerCompactView?.visibility = View.GONE
-        hourlyView?.visibility = View.VISIBLE
-        kmView?.visibility = View.VISIBLE
-        detailsView?.visibility = View.VISIBLE
+        setTimerHeaderVisibility(View.VISIBLE)
+        setWindowGeometry(WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT, positionParams?.x ?: 0, positionParams?.y ?: 0)
     }
 
+    private fun setTimerHeaderVisibility(visibility: Int) {
+        hourlyView?.visibility = visibility
+        kmView?.visibility = visibility
+        detailsView?.visibility = visibility
+    }
     private fun restorePanelChrome() {
         root?.apply {
             setPadding(
@@ -888,21 +863,6 @@ class OverlayController(
                     )
                 }
         }
-    }
-
-    private fun hideAnalysisDetails() {
-        scoreView?.visibility = View.GONE
-
-        finishEstimateView?.visibility =
-            View.GONE
-        finishEstimateView?.text = ""
-
-        suggestionsTitleView?.visibility =
-            View.GONE
-
-        suggestionsView?.visibility =
-            View.GONE
-        suggestionsView?.text = ""
     }
 
     private fun hideTimerControls() {
@@ -1065,181 +1025,200 @@ class OverlayController(
         }
     }
 
-    private fun suggestionLine(offer: RideOffer, targetHourly: Double): String {
-        val requiredFare = offer.minimumFareForHourly(targetHourly)
-        val delta = requiredFare - offer.fare
-        val targetText =
-            if (targetHourly % 1.0 == 0.0) targetHourly.toInt().toString()
-            else String.format(Locale.US, "%.1f", targetHourly)
+    private fun isWaiting() = waitingView?.visibility == View.VISIBLE
 
-        val suffix =
-            if (delta > 0.005) String.format(Locale.US, "  +$%.2f", delta)
-            else "  ✓ actual"
-
-        return String.format(Locale.US, "%s/h → $%.2f%s", targetText, requiredFare, suffix)
+    private fun usableDisplay(): Rect {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val metrics = windowManager.maximumWindowMetrics
+            val bars = metrics.windowInsets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+            )
+            return Rect(metrics.bounds).apply {
+                left += bars.left
+                top += bars.top
+                right -= bars.right
+                bottom -= bars.bottom
+            }
+        }
+        @Suppress("DEPRECATION")
+        val frame = Rect().apply { root?.getWindowVisibleDisplayFrame(this) }
+        if (frame.width() > 0 && frame.height() > 0) return frame
+        return context.resources.displayMetrics.run { Rect(0, 0, widthPixels, heightPixels) }
     }
 
-    private fun makeDraggable(
-        view: View,
-        lp: WindowManager.LayoutParams
-    ) {
+    private fun updateDisplayArea() {
+        val available = usableDisplay()
+        if (available == displayArea) return
+        displayArea = available
+        cancelGesture()
+        if (mode == Mode.ANALYZING) {
+            applyAnalysisPlacement()
+        } else {
+            positionParams?.let { moveWithinDisplay(it.x, it.y) }
+        }
+    }
+
+    private fun waitingSize() = dp(52).coerceAtMost(
+        minOf(displayArea.width(), displayArea.height()).coerceAtLeast(1)
+    )
+
+    private fun waitingCoordinates(size: Int): Pair<Int, Int> {
+        val travelX = (displayArea.width() - size).coerceAtLeast(0)
+        val travelY = (displayArea.height() - size).coerceAtLeast(0)
+        val (x, y) = waitingPosition?.resolve(travelX, travelY)
+            ?: ((travelX - dp(12)).coerceAtLeast(0) to dp(150).coerceAtMost(travelY))
+        return (displayArea.left + x) to (displayArea.top + y)
+    }
+
+    private fun initialWaitingPlacement(lp: WindowManager.LayoutParams) {
+        val size = waitingSize()
+        val (x, y) = waitingCoordinates(size)
+        lp.width = size
+        lp.height = size
+        lp.x = x
+        lp.y = y
+    }
+
+    private fun applyAnalysisPlacement() {
+        if (isWaiting()) {
+            val size = waitingSize()
+            val (x, y) = waitingCoordinates(size)
+            setWindowGeometry(size, size, x, y)
+        } else if (renderedOffer != null) {
+            val margin = dp(4)
+            offerPanel?.fitToWidth((displayArea.width() - margin * 2).coerceAtLeast(1))
+            setWindowGeometry(WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                displayArea.left + margin, displayArea.top + margin)
+        }
+    }
+
+    private fun setWindowGeometry(width: Int, height: Int, x: Int, y: Int) {
+        val lp = positionParams ?: return
+        val view = root ?: return
+        if (lp.width == width && lp.height == height && lp.x == x && lp.y == y) return
+        lp.width = width
+        lp.height = height
+        lp.x = x
+        lp.y = y
+        windowManager.updateViewLayout(view, lp)
+    }
+
+    private fun moveWithinDisplay(x: Int, y: Int) {
+        val lp = positionParams ?: return
+        val view = root ?: return
+        val width = if (isWaiting()) lp.width else view.width
+        val height = if (isWaiting()) lp.height else view.height
+        setWindowGeometry(lp.width, lp.height,
+            x.coerceIn(displayArea.left, (displayArea.right - width).coerceAtLeast(displayArea.left)),
+            y.coerceIn(displayArea.top, (displayArea.bottom - height).coerceAtLeast(displayArea.top)))
+    }
+
+    private fun saveWaitingPosition(lp: WindowManager.LayoutParams) {
+        val position = WaitingPosition.fromPixels(
+            lp.x - displayArea.left, lp.y - displayArea.top,
+            displayArea.width() - lp.width, displayArea.height() - lp.height
+        )
+        waitingPosition = position
+        positionPreferences.edit()
+            .putFloat("waiting_x", position.x)
+            .putFloat("waiting_y", position.y)
+            .apply()
+    }
+
+    private fun cancelGesture() {
+        gestureActive = false
+        lastTapUpAt = 0L
+        insideStopZone = false
+        hideStopTarget()
+    }
+
+    private fun makeDraggable(view: View, lp: WindowManager.LayoutParams) {
         var startX = 0
         var startY = 0
         var touchX = 0f
         var touchY = 0f
         var dragging = false
-        var lastTapUpAt = 0L
 
-        val dragThreshold =
-            dp(8).toFloat()
-
-        view.setOnTouchListener {
-                _,
-                event ->
-
+        view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    if (isWaiting() &&
+                        hypot(event.x - view.width / 2f, event.y - view.height / 2f) > view.width / 2f
+                    ) {
+                        cancelGesture()
+                        return@setOnTouchListener false
+                    }
+                    gestureActive = true
                     startX = lp.x
                     startY = lp.y
                     touchX = event.rawX
                     touchY = event.rawY
                     dragging = false
                     insideStopZone = false
-                    true
                 }
 
-                MotionEvent.ACTION_MOVE -> {
-                    val dx =
-                        event.rawX - touchX
-                    val dy =
-                        event.rawY - touchY
-
-                    if (
-                        !dragging &&
-                        hypot(
-                            dx.toDouble(),
-                            dy.toDouble()
-                        ) >= dragThreshold
-                    ) {
-                        dragging = true
-                        lastTapUpAt = 0L
-                        showStopTarget()
-                    }
-
-                    if (dragging) {
-                        lp.x =
-                            (startX - dx)
-                                .toInt()
-                                .coerceAtLeast(0)
-
-                        lp.y =
-                            (startY + dy)
-                                .toInt()
-                                .coerceAtLeast(0)
-
-                        runCatching {
-                            windowManager.updateViewLayout(
-                                view,
-                                lp
-                            )
+                MotionEvent.ACTION_MOVE -> if (gestureActive) {
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+                    // During an offer the panel stays in its reading position.
+                    if (!(mode == Mode.ANALYZING && !isWaiting())) {
+                        if (!dragging && hypot(dx, dy) >= dp(8)) {
+                            dragging = true
+                            lastTapUpAt = 0L
+                            showStopTarget()
                         }
-
-                        val nowInside =
-                            isInsideStopZone(
-                                event.rawX,
-                                event.rawY
-                            )
-
-                        if (
-                            nowInside !=
-                            insideStopZone
-                        ) {
-                            insideStopZone =
-                                nowInside
-
-                            setStopTargetActive(
-                                nowInside
-                            )
-
-                            if (nowInside) {
-                                view.performHapticFeedback(
-                                    HapticFeedbackConstants.LONG_PRESS
-                                )
+                        if (dragging) {
+                            moveWithinDisplay((startX + dx).toInt(), (startY + dy).toInt())
+                            val inside = isInsideStopZone(event.rawX, event.rawY)
+                            if (inside != insideStopZone) {
+                                insideStopZone = inside
+                                setStopTargetActive(inside)
+                                if (inside) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             }
                         }
+                    } else if (hypot(dx, dy) >= dp(8)) {
+                        // Suppress a tap without moving the offer or showing the stop target.
+                        dragging = true
+                        lastTapUpAt = 0L
                     }
-
-                    true
                 }
 
-                MotionEvent.ACTION_UP -> {
-                    val wasDragging =
-                        dragging
-
-                    val shouldStop =
-                        dragging &&
-                            isInsideStopZone(
-                                event.rawX,
-                                event.rawY
-                            )
-
+                MotionEvent.ACTION_UP -> if (gestureActive) {
+                    gestureActive = false
+                    val shouldStop = dragging && stopTarget != null &&
+                        isInsideStopZone(event.rawX, event.rawY)
                     hideStopTarget()
-                    dragging = false
                     insideStopZone = false
-
-                    if (shouldStop) {
-                        view.visibility =
-                            View.GONE
-
-                        view.post {
+                    when {
+                        shouldStop -> {
                             remove()
                             onStopRequested()
                         }
-                    } else if (
-                        !wasDragging &&
-                        mode == Mode.TIMER_RUNNING
-                    ) {
-                        lastTapUpAt = 0L
-
-                        if (timerExpanded) {
-                            collapseTimerPanel()
-                        } else {
-                            expandTimerPanel()
+                        dragging && isWaiting() -> saveWaitingPosition(lp)
+                        !dragging && mode == Mode.TIMER_RUNNING -> {
+                            if (timerExpanded) collapseTimerPanel() else expandTimerPanel()
                         }
-                    } else if (
-                        !wasDragging &&
-                        mode == Mode.ANALYZING
-                    ) {
-                        val now =
-                            SystemClock.uptimeMillis()
-
-                        if (
-                            lastTapUpAt > 0L &&
-                            now - lastTapUpAt <=
-                            DOUBLE_TAP_TIMEOUT_MS
-                        ) {
-                            lastTapUpAt = 0L
-                            enterTimerSetup()
-                        } else {
-                            lastTapUpAt = now
+                        !dragging && mode == Mode.ANALYZING -> {
+                            val now = SystemClock.uptimeMillis()
+                            if (lastTapUpAt > 0L && now - lastTapUpAt <= DOUBLE_TAP_TIMEOUT_MS) {
+                                enterTimerSetup()
+                            } else {
+                                lastTapUpAt = now
+                            }
                         }
                     }
-
-                    true
                 }
 
-                MotionEvent.ACTION_CANCEL -> {
-                    hideStopTarget()
-                    dragging = false
-                    insideStopZone = false
-                    true
+                MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> {
+                    val restorePosition = gestureActive && dragging && isWaiting()
+                    cancelGesture()
+                    if (restorePosition) applyAnalysisPlacement()
                 }
-
-                else -> true
             }
+            true
         }
     }
-
     private fun showStopTarget() {
         if (stopTarget != null) return
 
@@ -1320,20 +1299,6 @@ class OverlayController(
             context.resources.displayMetrics.run {
                 widthPixels.toFloat() to heightPixels.toFloat()
             }
-        }
-
-    private fun scoreColor(value: Double, excellent: Double, good: Double): Int =
-        when {
-            value >= excellent -> Color.rgb(76, 217, 100)
-            value >= good -> Color.rgb(255, 204, 0)
-            else -> Color.rgb(255, 69, 58)
-        }
-
-    private fun score100Color(score: Int): Int =
-        when {
-            score >= 70 -> Color.rgb(76, 217, 100)
-            score >= 50 -> Color.rgb(255, 204, 0)
-            else -> Color.rgb(255, 69, 58)
         }
 
     companion object {

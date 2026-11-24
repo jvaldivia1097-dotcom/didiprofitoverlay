@@ -55,7 +55,7 @@ object OfferParser {
     fun parse(lines: List<OcrLine>): RideOffer? {
         if (lines.isEmpty() || isOfferInactive(lines)) return null
 
-        val cleaned = lines.map { it.copy(text = normalize(it.text)) }
+        val cleaned = withoutWrappedOverlayTotal(lines, OcrLine::text).map { it.copy(text = normalize(it.text)) }
 
         // Important V3.1 fix: never use route totals printed by our own overlay
         // as pickup/trip rows for the next DiDi proposal.
@@ -89,7 +89,7 @@ object OfferParser {
     }
 
     fun parseSimpleText(raw: String): RideOffer? {
-        val normalized = normalize(raw)
+        val normalized = normalize(withoutWrappedOverlayTotal(raw.lines()) { it }.joinToString("\n"))
         if (inactiveMarkers.any { fold(normalized).contains(it) }) return null
 
         val lines = normalized.lines()
@@ -218,9 +218,30 @@ object OfferParser {
         return secondaryFareMarkers.any { folded.contains(it) }
     }
 
+
+    private val compactMinimum = Regex("""^min\.?\s*(?:[$＄s]\s*)?\d+[.,]\d{2}(?:\s+(?:\+\s*[$＄s]?\s*\d+[.,]\d{2}|[✓✔]?\s*actual))?$""")
+    private val compactIncrease = Regex("""^\+\s*[$＄s]\s*\d+[.,]\d{2}$""")
+    private val compactTotalFragment = Regex("""^\s*\d+\s*min\s*[·•]\s*\d+[.,]\d+\s*km(?:\s*[·•])?\s*$""", RegexOption.IGNORE_CASE)
+    private val compactFareFragment = Regex("""^\s*[·•]?\s*tarifa\s*[$＄s]\s*\d+[.,]\d{2}\s*$""", RegexOption.IGNORE_CASE)
+
+    private fun <T> withoutWrappedOverlayTotal(lines: List<T>, text: (T) -> String): List<T> {
+        val excluded = mutableSetOf<Int>()
+        for (i in 0 until lines.lastIndex) {
+            if (compactTotalFragment.matches(text(lines[i])) &&
+                compactFareFragment.matches(text(lines[i + 1]))
+            ) {
+                excluded.add(i)
+                excluded.add(i + 1)
+            }
+        }
+        return lines.filterIndexed { index, _ -> index !in excluded }
+    }
+
     private fun isOverlayLine(text: String): Boolean {
         val lower = fold(text)
-        return lower.contains("/h") ||
+        return compactMinimum.matches(lower.trim()) ||
+            compactIncrease.matches(lower.trim()) ||
+            lower.contains("/h") ||
             lower.contains("/km") ||
             lower.contains("rentabilidad") ||
             lower.contains("analizando didi") ||
